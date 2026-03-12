@@ -9,10 +9,14 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
+from prometheus_client import generate_latest
 from pydantic import BaseModel
 from strawberry.fastapi import GraphQLRouter
 
+# Import definitions to ensure metrics are registered at import time
+import src.metrics.definitions as _metrics_defs  # noqa: F401
 from src.api.schema import GraphQLContext, schema
+from src.metrics.middleware import MetricsMiddleware
 
 # Module-level readiness flag.
 # Fine for single-worker dev; for production, replace with a DB check.
@@ -49,6 +53,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Metrics middleware (must be added before CORS so it wraps all requests)
+    app.add_middleware(MetricsMiddleware)
+
     # CORS — permissive for dev
     app.add_middleware(
         CORSMiddleware,
@@ -72,10 +79,13 @@ def create_app() -> FastAPI:
             return JSONResponse({"status": "starting"}, status_code=503)
         return JSONResponse({"status": "ok"})
 
-    # Metrics placeholder (wired in Phase 6)
+    # Prometheus metrics endpoint
     @app.get("/metrics")
     async def metrics() -> PlainTextResponse:
-        return PlainTextResponse("")
+        return PlainTextResponse(
+            generate_latest().decode("utf-8"),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     # Simulate-call stub (wired to real pipeline in Phase 7a)
     @app.post("/test/simulate-call")

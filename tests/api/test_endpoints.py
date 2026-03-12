@@ -31,10 +31,13 @@ async def test_health_ok(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_metrics_placeholder(client: AsyncClient) -> None:
+async def test_metrics_returns_prometheus_exposition(client: AsyncClient) -> None:
     resp = await client.get("/metrics")
     assert resp.status_code == 200
-    assert resp.text == ""
+    # Should contain Prometheus exposition format with our custom metrics
+    assert "hsv_active_voice_sessions" in resp.text
+    assert "hsv_intent_classification_total" in resp.text
+    assert "text/plain" in resp.headers["content-type"]
 
 
 @pytest.mark.asyncio

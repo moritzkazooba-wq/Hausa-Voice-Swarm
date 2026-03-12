@@ -196,3 +196,72 @@ Tracks what has been built, key file paths, and interface contracts.
 - Producer does not retry on transient Kafka errors (add tenacity in production hardening phase)
 - No schema registry integration — events are plain JSON (sufficient for current scale)
 - Agent instrumentation hooks exist as helpers but are not yet wired into agent stubs (agents are still stubs)
+
+---
+
+## Phase 6: Prometheus Metrics
+
+### Key Files Created/Modified
+- `src/metrics/definitions.py` — all Prometheus metric objects (Gauges, Counters, Histograms)
+- `src/metrics/middleware.py` — `MetricsMiddleware` for FastAPI HTTP request metrics
+- `src/metrics/__init__.py` — re-exports all metrics and middleware
+- `src/agents/intent.py` — intent classifier with `classify_intent()`, instruments `intent_classification_total`
+- `src/agents/domains/base.py` — `BaseDomainAgent` ABC with `run()` instrumenting `tool_execution_total`
+- `src/agents/domains/balance.py` — `BalanceAgent(BaseDomainAgent)`
+- `src/agents/domains/transfer.py` — `TransferAgent(BaseDomainAgent)` (requires_confirmation)
+- `src/agents/domains/bills.py` — `BillsAgent(BaseDomainAgent)` (requires_confirmation)
+- `src/agents/domains/general.py` — `GeneralAgent(BaseDomainAgent)`
+- `src/agents/domains/__init__.py` — re-exports all agent classes
+- `src/agents/supervisor.py` — `route_to_agent()` supervisor, instruments `agent_routing_total`
+- `src/agents/__init__.py` — re-exports `classify_intent`, `route_to_agent`
+- `src/api/app.py` — wired `/metrics` endpoint via `generate_latest()`, added `MetricsMiddleware`
+- `tests/api/test_endpoints.py` — updated metrics test to verify Prometheus exposition format
+- `tests/metrics/test_definitions.py` — 8 tests (registry, gauge, counters, histograms, labels)
+- `tests/metrics/test_instrumentation.py` — 6 tests (intent classifier, domain agents, supervisor metrics)
+
+### Public Interfaces
+
+**Metric Definitions (`src.metrics.definitions`):**
+- `active_voice_sessions` — Gauge
+- `voice_to_voice_latency_ms` — Histogram
+- `asr_latency_ms` — Histogram (labels: `model`, `intent`)
+- `tts_latency_ms` — Histogram (labels: `model`, `intent`)
+- `llm_latency_ms` — Histogram (labels: `model`, `intent`)
+- `intent_classification_total` — Counter (labels: `intent`, `classifier_type`)
+- `tool_execution_total` — Counter (labels: `tool_name`, `success`)
+- `agent_routing_total` — Counter (labels: `target_agent`)
+- `session_duration_seconds` — Histogram
+- `cost_per_interaction_usd` — Histogram
+- `http_requests_total` — Counter (labels: `method`, `path`, `status_code`)
+- `http_request_duration_ms` — Histogram (labels: `method`, `path`)
+
+**Middleware:**
+- `MetricsMiddleware(BaseHTTPMiddleware)` — auto-records `http_requests_total` and `http_request_duration_ms`
+
+**Intent Classifier (`src.agents.intent`):**
+- `classify_intent(utterance: str, *, classifier_type: str = "sentence-transformers") -> ClassificationResult`
+- `ClassificationResult(intent, confidence, utterance, classifier_type, elapsed_ms)`
+
+**Domain Agents (`src.agents.domains`):**
+- `BaseDomainAgent` — ABC with `run(session_id, utterance) -> ActionResult` (instrumented) and abstract `_execute()`
+- `BalanceAgent`, `TransferAgent`, `BillsAgent`, `GeneralAgent` — concrete implementations
+
+**Supervisor (`src.agents.supervisor`):**
+- `route_to_agent(session_id: str, utterance: str) -> tuple[ActionResult, ClassificationResult]`
+
+### Integration Points
+- Metrics import: `from src.metrics import active_voice_sessions, intent_classification_total, ...`
+- Middleware: added automatically in `create_app()` — no manual wiring needed
+- `/metrics` endpoint: returns `prometheus_client.generate_latest()` in Prometheus exposition format
+- Agent usage: `from src.agents import classify_intent, route_to_agent`
+- Domain agents: `from src.agents.domains import BalanceAgent, TransferAgent, ...`
+- Voice pipeline should call `active_voice_sessions.inc()` / `.dec()` on session start/end
+- Voice pipeline should observe `voice_to_voice_latency_ms`, `asr_latency_ms`, `tts_latency_ms`
+- LLM calls should observe `llm_latency_ms.labels(model=..., intent=...).observe(ms)`
+- Session lifecycle should observe `session_duration_seconds` and `cost_per_interaction_usd`
+
+### Known Limitations
+- Intent classifier returns mock results (always "general" at 0.85 confidence) — real sentence-transformers model in future phase
+- Domain agents return mock responses — real DB/API integration in future phase
+- `cost_per_interaction_usd` not yet computed automatically — must be observed manually
+- No per-worker metric aggregation — single-process `prometheus_client` registry (sufficient for dev)
