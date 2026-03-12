@@ -88,3 +88,59 @@ Tracks what has been built, key file paths, and interface contracts.
 ### Known Limitations
 - No database ORM models yet — Pydantic models only (SQLAlchemy models in Phase 2)
 - Config classes don't yet validate inter-field dependencies (e.g. real ASR requires API key)
+
+---
+
+## Phase 2: GraphQL API with DataLoader
+
+### Key Files Created/Modified
+- `src/api/schema.py` — Strawberry types, Query, Mutation classes, schema object
+- `src/api/dataloader.py` — `AccountLoader`, `TransactionLoader` (batched N+1 prevention)
+- `src/api/mock_resolvers.py` — deterministic mock data + async resolver functions
+- `src/api/app.py` — FastAPI app factory with all endpoints
+- `src/api/__init__.py` — re-exports `create_app`, `schema`
+- `tests/api/test_graphql.py` — 12 tests (queries, mutations, DataLoader batching)
+- `tests/api/test_endpoints.py` — 4 tests (/health, /metrics, /test/simulate-call)
+
+### Public Interfaces
+
+**Strawberry Types:** `AccountType`, `TransactionType`, `ActionResultType`, `NetworkStatusType`
+
+**GraphQL Queries:**
+- `accountBalance(phoneNumber: String!) -> AccountType` — uses AccountLoader
+- `transactionHistory(accountId: ID!, last: Int = 10) -> [TransactionType!]!` — uses TransactionLoader
+- `networkStatus(region: String!) -> NetworkStatusType`
+
+**GraphQL Mutations (all return `ActionResultType` with `requiresConfirmation=true`):**
+- `processPayment(phoneNumber: String!, amount: Float!, merchant: String!)`
+- `resetPin(phoneNumber: String!)`
+- `changePlan(phoneNumber: String!, newPlan: String!)`
+- `createEscalationTicket(phoneNumber: String!, issue: String!)`
+
+**FastAPI Endpoints:**
+- `GET /graphql` — Strawberry GraphQL playground + POST for queries
+- `GET /health` — `{"status": "ok"}` when ready, 503 during startup
+- `GET /metrics` — placeholder (wired in Phase 6)
+- `POST /test/simulate-call` — stub returning `{"response": "Pipeline not yet connected", "session_id": "stub"}`
+
+**DataLoaders:**
+- `create_account_loader() -> DataLoader[str, CustomerProfile | None]`
+- `create_transaction_loader() -> DataLoader[UUID, list[Transaction]]`
+
+**Context:** `GraphQLContext(BaseContext)` — provides `account_loader`, `transaction_loader` per request
+
+**App Factory:** `create_app() -> FastAPI`
+
+### Integration Points
+- App entry: `from src.api import create_app; app = create_app()`
+- Schema access: `from src.api import schema`
+- Mock resolvers: `from src.api.mock_resolvers import get_customer, get_transactions, ...`
+- Resolvers import models from `src.models` (CustomerProfile, Transaction, ActionResult, NetworkStatus)
+- Context getter creates fresh DataLoaders per request to avoid cross-request caching
+
+### Known Limitations
+- All resolvers use mock data (`src/api/mock_resolvers.py`) — replace with real DB in Phase 3
+- `/metrics` returns empty string — wired to Prometheus in Phase 6
+- `/test/simulate-call` is a stub — wired to voice pipeline in Phase 7a
+- No authentication middleware yet (future phase)
+- `_ready` flag is module-level — for multi-worker production, replace with DB connectivity check
