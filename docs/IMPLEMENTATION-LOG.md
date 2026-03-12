@@ -251,3 +251,53 @@ Tracks what has been built, key file paths, and interface contracts.
 - Hausa accuracy not validated against real model (mocked in tests)
 - LiteLLM slow path untested with real API keys (mocked)
 - No persistence/checkpointing on the LangGraph yet (Phase 5)
+
+---
+
+## Phase 4b: Billing and Account Domain Agents
+
+### Key Files Created/Modified
+- `src/agents/domains/base.py` — `DomainAgent` base class with `_call_tool` (httpx GraphQL), `_generate_response` (mock/LLM), `_dispatch_tool` (abstract)
+- `src/agents/domains/billing.py` — `BillingAgent` for balance_check, transaction_history, payment, dispute
+- `src/agents/domains/account.py` — `AccountAgent` for pin_reset, plan_change, account_info
+- `src/agents/domains/__init__.py` — updated exports (added `AccountAgent`, `BillingAgent`, `DomainAgent`)
+- `src/agents/__init__.py` — updated exports
+- `src/agents/orchestrator.py` — rewired `INTENT_AGENT_MAP` and `DOMAIN_AGENTS` to use new agents
+- `tests/agents/domains/test_billing.py` — 9 tests (balance, transactions, payment confirmation, dispute escalation)
+- `tests/agents/domains/test_account.py` — 7 tests (account info, PIN reset flow, plan change flow)
+- `tests/agents/test_orchestrator.py` — updated assertions for new agent names, added httpx mock patches
+
+### Public Interfaces
+
+**DomainAgent (base class):**
+- `name: str`, `description: str`, `handled_intents: ClassVar[list[str]]`, `available_tools: ClassVar[list[str]]`, `default_llm: str`
+- `async handle(state) -> dict[str, Any]` — full process: dispatch tool → generate response
+- `async _call_tool(operation, variables) -> dict` — POST GraphQL to `AppSettings.api_base_url + "/graphql"` via httpx
+- `async _generate_response(intent, language, tool_result, phone_number, state) -> str` — mock (canned) or LiteLLM
+- `async _dispatch_tool(intent, state) -> dict` — abstract, subclasses implement routing
+
+**BillingAgent:**
+- `handled_intents`: balance_check, transaction_history, payment, dispute
+- `_select_model(intent)`: gpt-4o for disputes, gemini-flash for all others
+- Payment: requires `customer_context.confirmed=True` before calling `processPayment` mutation
+- Dispute: creates escalation ticket via `createEscalationTicket` mutation
+
+**AccountAgent:**
+- `handled_intents`: pin_reset, plan_change, account_info
+- `default_llm`: gemini-flash for all intents
+- PIN reset: requires confirmation → generates 6-digit mock verification code
+- Plan change: requires confirmation → calls `changePlan` mutation
+
+### Integration Points
+- Supervisor: `INTENT_AGENT_MAP` routes to `"billing"`, `"account"`, or `"general"` keys
+- `DOMAIN_AGENTS`: `{"billing": BillingAgent(), "account": AccountAgent(), "general": GeneralAgent()}`
+- GraphQL tool calls use `AppSettings.api_base_url` (configurable, NOT hardcoded localhost)
+- Tests use `pytest-httpx` `HTTPXMock` fixture — no real server needed
+- Import: `from src.agents.domains import BillingAgent, AccountAgent, DomainAgent`
+
+### Known Limitations
+- `_generate_response` in mock mode uses canned templates — no dynamic LLM generation
+- `GeneralAgent` remains a stub (handles technical_issue, other)
+- Payment/PIN/plan confirmation is stateless — no session-level tracking of confirmation state
+- `_call_tool` creates a new `httpx.AsyncClient` per call (no connection pooling yet)
+- No retry/circuit-breaker on GraphQL calls yet

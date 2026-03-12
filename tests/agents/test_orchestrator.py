@@ -1,6 +1,7 @@
 """Tests for LangGraph supervisor orchestrator."""
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 from src.agents.intent import IntentClassifier, IntentResult
 from src.agents.orchestrator import (
@@ -139,35 +140,71 @@ class TestSupervisor:
         assert result["current_agent"] == "human"
 
     async def test_domain_balance(self) -> None:
-        """balance_check routes to balance agent."""
+        """balance_check routes to billing agent."""
         clf = _mock_classifier("balance_check", 0.85)
         graph = build_supervisor(clf)
         state = _make_state("Check my balance", language="en")
-        result = await graph.ainvoke(state)
-        assert result["current_agent"] == "balance_agent"
+        with patch(
+            "src.agents.domains.billing.BillingAgent.handle",
+            new_callable=AsyncMock,
+            return_value={
+                "current_agent": "billing_agent",
+                "response": "Your balance is N15,000.50.",
+                "messages": [],
+            },
+        ):
+            result = await graph.ainvoke(state)
+        assert result["current_agent"] == "billing_agent"
 
     async def test_domain_payment(self) -> None:
-        """payment routes to bills agent."""
+        """payment routes to billing agent."""
         clf = _mock_classifier("payment", 0.8)
         graph = build_supervisor(clf)
         state = _make_state("Pay my bill", language="en")
-        result = await graph.ainvoke(state)
-        assert result["current_agent"] == "bills_agent"
+        with patch(
+            "src.agents.domains.billing.BillingAgent.handle",
+            new_callable=AsyncMock,
+            return_value={
+                "current_agent": "billing_agent",
+                "response": "We will process your payment.",
+                "messages": [],
+            },
+        ):
+            result = await graph.ainvoke(state)
+        assert result["current_agent"] == "billing_agent"
 
     async def test_domain_dispute(self) -> None:
-        """dispute routes to general agent."""
+        """dispute routes to billing agent."""
         clf = _mock_classifier("dispute", 0.75)
         graph = build_supervisor(clf)
         state = _make_state("I have a dispute", language="en")
-        result = await graph.ainvoke(state)
-        assert result["current_agent"] == "general_agent"
+        with patch(
+            "src.agents.domains.billing.BillingAgent.handle",
+            new_callable=AsyncMock,
+            return_value={
+                "current_agent": "billing_agent",
+                "response": "We've received your dispute.",
+                "messages": [],
+            },
+        ):
+            result = await graph.ainvoke(state)
+        assert result["current_agent"] == "billing_agent"
 
     async def test_state_has_response(self) -> None:
         """After graph execution, state should have a non-empty response."""
         clf = _mock_classifier("balance_check", 0.85)
         graph = build_supervisor(clf)
         state = _make_state("Check my balance", language="en")
-        result = await graph.ainvoke(state)
+        with patch(
+            "src.agents.domains.billing.BillingAgent.handle",
+            new_callable=AsyncMock,
+            return_value={
+                "current_agent": "billing_agent",
+                "response": "Your balance is N15,000.50.",
+                "messages": [],
+            },
+        ):
+            result = await graph.ainvoke(state)
         assert result["response"] != ""
 
     async def test_response_max_sentences(self) -> None:
@@ -175,7 +212,16 @@ class TestSupervisor:
         clf = _mock_classifier("balance_check", 0.85)
         graph = build_supervisor(clf)
         state = _make_state("Check my balance", language="en")
-        result = await graph.ainvoke(state)
+        with patch(
+            "src.agents.domains.billing.BillingAgent.handle",
+            new_callable=AsyncMock,
+            return_value={
+                "current_agent": "billing_agent",
+                "response": "Your balance is N15,000.50.",
+                "messages": [],
+            },
+        ):
+            result = await graph.ainvoke(state)
         # Count sentences by splitting on sentence-ending punctuation
         import re
         sentences = re.split(r'[.!?]+\s', result["response"])

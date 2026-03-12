@@ -10,10 +10,9 @@ from langgraph.graph.state import CompiledStateGraph
 from typing_extensions import TypedDict
 
 from src.agents.base import BaseAgent
-from src.agents.domains.balance import BalanceAgent
-from src.agents.domains.bills import BillsAgent
+from src.agents.domains.account import AccountAgent
+from src.agents.domains.billing import BillingAgent
 from src.agents.domains.general import GeneralAgent
-from src.agents.domains.transfer import TransferAgent
 from src.agents.intent import IntentClassifier, IntentResult
 from src.models.session import AgentMessage
 
@@ -45,21 +44,20 @@ class SupervisorState(TypedDict):
 # ---------------------------------------------------------------------------
 
 INTENT_AGENT_MAP: dict[str, str] = {
-    "balance_check": "balance",
-    "account_info": "balance",
-    "transaction_history": "balance",
-    "payment": "bills",
-    "plan_change": "bills",
-    "pin_reset": "transfer",
-    "dispute": "general",
+    "balance_check": "billing",
+    "transaction_history": "billing",
+    "payment": "billing",
+    "dispute": "billing",
+    "pin_reset": "account",
+    "plan_change": "account",
+    "account_info": "account",
     "technical_issue": "general",
     "other": "general",
 }
 
 DOMAIN_AGENTS: dict[str, BaseAgent] = {
-    "balance": BalanceAgent(),
-    "transfer": TransferAgent(),
-    "bills": BillsAgent(),
+    "billing": BillingAgent(),
+    "account": AccountAgent(),
     "general": GeneralAgent(),
 }
 
