@@ -329,3 +329,59 @@ Tracks what has been built, key file paths, and interface contracts.
 - WebSocket server logs connections but doesn't process audio
 - `/test/simulate-call` bypasses pipecat pipeline, calls `route_to_agent()` directly
 - Daily and Telnyx transports raise `NotImplementedError` — placeholders for future telephony integration
+
+---
+
+## Phase 8a: Test Fixture Refactor
+
+### Key Files Created/Modified
+- `tests/conftest.py` — Layer 1 (base) + Layer 2 (service) fixtures: `fakeredis_client`, `db_session`, `mock_kafka_producer`, `mock_graphql_client`
+- `tests/api/conftest.py` — **(new)** consolidated `app` and `client` fixtures (removed from test_endpoints.py and test_graphql.py)
+- `tests/events/conftest.py` — **(new)** `mock_producer` with mocked internal transport for producer routing tests
+- `tests/agents/conftest.py` — **(new)** Layer 3 agent fixtures: `intent_classifier`, `supervisor`, domain agents
+- `tests/voice/conftest.py` — **(new)** Layer 4 voice fixtures: `bridge`, `filler`, `stub_transport`
+- `tests/api/test_endpoints.py` — removed local `app`/`client` fixtures, uses api conftest
+- `tests/api/test_graphql.py` — removed local `app`/`client` fixtures, uses api conftest
+- `tests/events/test_producer.py` — removed local `mock_producer`, uses events conftest
+- `tests/events/test_session_events.py` — switched from local `mock_producer` to root `mock_kafka_producer`
+- `tests/voice/test_agent_bridge.py` — removed local `bridge` fixture, uses voice conftest
+- `tests/voice/test_fillers.py` — removed local `filler` fixture, uses voice conftest
+
+### Public Interfaces
+
+**Layer 1 — Base fixtures (root conftest):**
+- `fakeredis_client` — `AsyncGenerator[aioredis.Redis, None]`, async fakeredis connection
+- `db_session` — skips test when `COCKROACHDB_URL` not set (placeholder for async SQLAlchemy session)
+
+**Layer 2 — Service fixtures (root conftest):**
+- `mock_kafka_producer` — `KafkaEventProducer` with `publish` as `AsyncMock`, records published events
+- `mock_graphql_client` — `AsyncGenerator[AsyncClient, None]`, httpx client wired to FastAPI app
+
+**Layer 3 — Agent fixtures (`tests/agents/conftest.py`):**
+- `balance_agent`, `transfer_agent`, `bills_agent`, `general_agent` — domain agent instances
+- `intent_classifier` — returns `classify_intent` function
+- `supervisor` — returns `route_to_agent` function
+
+**Layer 4 — Voice fixtures (`tests/voice/conftest.py`):**
+- `stub_transport` — `StubTransport("test input")`
+- `bridge` — `AgentBridgeProcessor(session_id="test-session-001")`
+- `filler` — `FillerProcessor()`
+
+**API fixtures (`tests/api/conftest.py`):**
+- `app` — `FastAPI` from `create_app()`
+- `client` — `AsyncClient` with `ASGITransport`, `_ready=True` for lifespan bypass
+
+**Events fixtures (`tests/events/conftest.py`):**
+- `mock_producer` — `KafkaEventProducer` with mocked `_producer.send_and_wait` for transport-level tests
+
+### Integration Points
+- Root fixtures available to all tests: `fakeredis_client`, `db_session`, `mock_kafka_producer`, `mock_graphql_client`
+- Subdirectory fixtures scoped to their test directories — no cross-directory imports
+- No circular imports between fixture modules
+- 128 tests pass, mypy clean, ruff clean
+
+### Known Limitations
+- `db_session` is a skip-only placeholder — yields no session until SQLAlchemy ORM models exist (Phase 2+)
+- `mock_graphql_client` uses mock resolvers — will need update when real DB resolvers are wired
+- Layer 3 agent fixtures return mock-only agents — update when real LLM/DB integration lands
+- `voice_pipeline` fixture not yet implemented (requires async pipeline lifecycle management)
