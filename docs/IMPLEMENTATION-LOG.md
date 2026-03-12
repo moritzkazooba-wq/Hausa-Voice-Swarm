@@ -144,3 +144,55 @@ Tracks what has been built, key file paths, and interface contracts.
 - `/test/simulate-call` is a stub — wired to voice pipeline in Phase 7a
 - No authentication middleware yet (future phase)
 - `_ready` flag is module-level — for multi-worker production, replace with DB connectivity check
+
+---
+
+## Phase 5: Kafka Event Bus
+
+### Key Files Created/Modified
+- `src/events/schemas.py` — `BaseEvent`, `IntentClassifiedEvent`, `ToolExecutedEvent`, `SessionStartedEvent`, `SessionEndedEvent`, `EscalationTriggeredEvent`
+- `src/events/producer.py` — `KafkaEventProducer` (async aiokafka), topic constants, event→topic routing
+- `src/events/consumer.py` — `BaseKafkaConsumer` (abstract), `AnalyticsConsumer` (Project C placeholder)
+- `src/events/session_events.py` — helper functions for emitting events from agents
+- `src/events/__init__.py` — re-exports all public symbols
+- `tests/events/test_schemas.py` — 13 tests (field validation, JSON roundtrips)
+- `tests/events/test_producer.py` — 8 tests (topic routing, serialization, start/stop lifecycle)
+- `tests/events/test_session_events.py` — 7 tests (helper functions with mock producer)
+
+### Public Interfaces
+
+**Event Schemas (all extend `BaseEvent` with `session_id`, `timestamp`):**
+- `IntentClassifiedEvent(utterance, intent, confidence, language, model_used)`
+- `ToolExecutedEvent(agent_name, tool_name, success, duration_ms, result_summary, metadata?)`
+- `SessionStartedEvent(customer_phone, channel, language)`
+- `SessionEndedEvent(reason, duration_seconds, total_turns)`
+- `EscalationTriggeredEvent(from_agent, reason, customer_phone, priority?)`
+
+**Producer:**
+- `KafkaEventProducer(settings?)` — `start()`, `stop()`, `publish(event)`
+- Topics: `hsv.intents`, `hsv.tools`, `hsv.sessions`, `hsv.escalations`
+
+**Consumer:**
+- `BaseKafkaConsumer(*topics, group_id, settings?)` — `start()`, `stop()`, `run()`, abstract `handle_message()`
+- `AnalyticsConsumer(settings?)` — subscribes to all 4 topics, group `hsv-analytics`
+
+**Session Event Helpers:**
+- `emit_intent_classified(producer, *, session_id, utterance, intent, confidence, language, model_used)`
+- `emit_tool_executed(producer, *, session_id, agent_name, tool_name, success, duration_ms, result_summary, metadata?)`
+- `emit_session_started(producer, *, session_id, customer_phone, channel, language)`
+- `emit_session_ended(producer, *, session_id, reason, duration_seconds, total_turns)`
+- `emit_escalation(producer, *, session_id, from_agent, reason, customer_phone, priority?)`
+
+### Integration Points
+- All events: `from src.events import IntentClassifiedEvent, KafkaEventProducer, ...`
+- Helpers: `from src.events import emit_intent_classified, emit_tool_executed, ...`
+- Agent instrumentation: call `emit_intent_classified` after intent classification, `emit_tool_executed` after domain agent actions
+- Session lifecycle: call `emit_session_started`/`emit_session_ended` from voice pipeline or session manager
+- Producer lifecycle: `start()` in FastAPI lifespan, `stop()` on shutdown
+- Config: uses `KafkaSettings` from `src.config` (`kafka_bootstrap_servers`, `topic_prefix`)
+
+### Known Limitations
+- `AnalyticsConsumer.handle_message` is a placeholder — forwards to structlog only (Project C will implement)
+- Producer does not retry on transient Kafka errors (add tenacity in production hardening phase)
+- No schema registry integration — events are plain JSON (sufficient for current scale)
+- Agent instrumentation hooks exist as helpers but are not yet wired into agent stubs (agents are still stubs)
