@@ -202,3 +202,52 @@ Tracks what has been built, key file paths, and interface contracts.
 - Seed script uses `random` (not crypto-safe) — fine for test data
 - No Alembic `downgrade` tested in CI yet
 - DB repository tests require running CockroachDB (`COCKROACHDB_URL` env var)
+
+---
+
+## Phase 4a: Intent Classifier and LangGraph Supervisor Skeleton
+
+### Key Files Created/Modified
+- `src/agents/intent.py` — IntentClassifier with embedding fast path + keyword/LLM fallback
+- `src/agents/orchestrator.py` — LangGraph StateGraph supervisor with conditional routing
+- `src/agents/base.py` — BaseAgent ABC for domain agents
+- `src/agents/llm_router.py` — Cost-based model selection (gemini-flash vs gpt-4o)
+- `src/agents/prompts.py` — System prompt templates (Hausa, English, Pidgin)
+- `src/agents/domains/balance.py` — Balance inquiry agent (stub)
+- `src/agents/domains/transfer.py` — Transfer/PIN reset agent (stub)
+- `src/agents/domains/bills.py` — Bills/plan change agent (stub)
+- `src/agents/domains/general.py` — General/dispute agent (stub)
+- `src/agents/__init__.py` — Re-exports all public interfaces
+- `src/agents/domains/__init__.py` — Re-exports domain agents
+- `.claude/skills/langgraph-*` — LangGraph skills from langchain-ai/langchain-skills
+- `tests/agents/test_intent.py` — 18 tests (classifier, keyword, model mocking)
+- `tests/agents/test_orchestrator.py` — 16 tests (routing, graph execution)
+- `tests/agents/test_llm_router.py` — 7 tests (cost routing)
+- `tests/agents/test_prompts.py` — 7 tests (prompt templates)
+
+### Public Interfaces
+- `IntentClassifier()` — lazy-loads `paraphrase-multilingual-MiniLM-L12-v2`, `.classify(text) -> IntentResult`
+- `IntentResult(intent, confidence, classifier_type, latency_ms)` — Pydantic model
+- `INTENTS: list[str]` — 11 supported intents
+- `INTENT_EXAMPLES: dict[str, list[str]]` — 5+ Hausa, 5+ English, 2+ Pidgin per intent
+- `SupervisorState(TypedDict)` — messages, language, intent, confidence, customer_context, current_agent, session_id, response
+- `build_supervisor(classifier) -> CompiledStateGraph` — builds and compiles the LangGraph
+- `route_intent(state) -> "greeting" | "escalation" | "domain"` — routing function
+- `BaseAgent` ABC — `.handle(state) -> dict[str, Any]`
+- `BalanceAgent`, `TransferAgent`, `BillsAgent`, `GeneralAgent` — domain stubs
+- `select_model(intent) -> str` — returns LLM model name based on intent complexity
+- `build_system_prompt(language, customer_name) -> str` — parameterized prompt
+
+### Integration Points
+- Intent classifier: `from src.agents import IntentClassifier`; call `await classifier.classify(text)`
+- Supervisor: `from src.agents import build_supervisor`; `graph = build_supervisor(classifier)`; `result = await graph.ainvoke(state)`
+- Cost router: `from src.agents import select_model`; `model = select_model(intent)`
+- Prompts: `from src.agents import build_system_prompt`; `prompt = build_system_prompt("ha", "Amina")`
+- Domain agents: `from src.agents.domains import BalanceAgent, ...`
+
+### Known Limitations
+- Domain agents are stubs returning hardcoded responses (real implementation in Phase 4b)
+- Sentence-transformers model not pre-cached — first call downloads ~420MB
+- Hausa accuracy not validated against real model (mocked in tests)
+- LiteLLM slow path untested with real API keys (mocked)
+- No persistence/checkpointing on the LangGraph yet (Phase 5)
