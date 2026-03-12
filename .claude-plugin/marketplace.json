@@ -1,0 +1,16 @@
+{
+  "name": "hsv-pipecat-skills",
+  "plugins": [
+    {
+      "name": "pipecat",
+      "description": "Pipecat voice pipeline skills for Hausa Voice Swarm",
+      "version": "1.0.0",
+      "source": "./",
+      "skills": [
+        "./skills/pipecat-init",
+        "./skills/pipecat-voice",
+        "./skills/pipecat-deploy"
+      ]
+    }
+  ]
+}
