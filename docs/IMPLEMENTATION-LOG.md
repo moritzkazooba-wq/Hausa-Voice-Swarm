@@ -265,3 +265,67 @@ Tracks what has been built, key file paths, and interface contracts.
 - Domain agents return mock responses — real DB/API integration in future phase
 - `cost_per_interaction_usd` not yet computed automatically — must be observed manually
 - No per-worker metric aggregation — single-process `prometheus_client` registry (sufficient for dev)
+
+---
+
+## Phase 7a: Pipecat Pipeline Skeleton
+
+### Key Files Created/Modified
+- `src/voice/vad_config.py` — Silero VAD configuration with `VADProcessor` wrapper (300ms pad, 0.5 threshold, 0.8s endpointing)
+- `src/voice/asr.py` — `StubASRProcessor(FrameProcessor)` simulates transcription from audio frames, instruments `asr_latency_ms`
+- `src/voice/tts.py` — `StubTTSProcessor(FrameProcessor)` simulates speech synthesis, forwards TextFrame + silent audio, instruments `tts_latency_ms`
+- `src/voice/agent_bridge.py` — `AgentBridgeProcessor(FrameProcessor)` connects pipecat to LangGraph supervisor via `route_to_agent()`
+- `src/voice/transport.py` — `StubTransport` (text-in/text-out for testing), `StubInputTransport`, `StubOutputTransport`, `create_transport()` factory
+- `src/voice/fillers.py` — `FillerProcessor` logs when response latency exceeds 500ms threshold
+- `src/voice/pipeline.py` — `create_voice_pipeline()` wires transport → VAD → ASR → filler → agent bridge → TTS → output
+- `src/voice/ws_server.py` — WebSocket server stub using `websockets.asyncio.server`, started/stopped via FastAPI lifespan
+- `src/voice/vad.py` — Re-exports from `vad_config` for backwards compatibility
+- `src/voice/__init__.py` — Updated re-exports for all new public symbols
+- `src/api/app.py` — Wired `/test/simulate-call` to `route_to_agent()`, lifespan starts/stops WebSocket server
+- `tests/voice/test_vad_config.py` — 3 tests (VADProcessor creation, params validation)
+- `tests/voice/test_transport.py` — 7 tests (input passthrough, output capture, factory, event signaling)
+- `tests/voice/test_agent_bridge.py` — 3 tests (TranscriptionFrame→TextFrame, passthrough, route_to_agent call)
+- `tests/voice/test_pipeline.py` — 2 tests (pipeline construction, processor count = 9 including internal Source/Sink)
+- `tests/voice/test_fillers.py` — 2 tests (filler triggers above/below 500ms threshold)
+- `tests/api/test_endpoints.py` — Updated simulate-call tests for real response fields
+
+### Public Interfaces
+
+**Pipeline Construction:**
+- `create_voice_pipeline(transport, session_id) -> tuple[Pipeline, PipelineTask, AgentBridgeProcessor]`
+- Pipeline order: transport.input() → VADProcessor → StubASRProcessor → FillerProcessor → AgentBridgeProcessor → StubTTSProcessor → transport.output()
+
+**Transport:**
+- `StubTransport(input_text: str)` — `.input()`, `.output()`, `.response_ready`, `.collected_text`, `.inject_text(task)`
+- `create_transport(settings?, *, input_text="") -> StubTransport` — factory with "stub", "daily" (NotImplementedError), "telnyx" (NotImplementedError)
+
+**Agent Bridge:**
+- `AgentBridgeProcessor(session_id: str)` — processes TranscriptionFrame → calls `route_to_agent()` → pushes TextFrame
+- `.last_classification` property for accessing classification result
+
+**VAD Configuration:**
+- `create_vad_params() -> VADParams` — confidence=0.5, start_secs=0.3, stop_secs=0.8, min_volume=0.6
+- `create_vad_processor() -> VADProcessor` — wraps SileroVADAnalyzer as FrameProcessor
+
+**Fillers:**
+- `FillerProcessor()` — logs when latency between TranscriptionFrame and TextFrame exceeds 500ms
+
+**WebSocket Server:**
+- `start_ws_server(port=8765) -> asyncio.Server` — stub server for future telephony
+
+### Integration Points
+- Voice pipeline: `from src.voice import create_voice_pipeline, StubTransport, create_transport`
+- Agent bridge: `from src.voice import AgentBridgeProcessor`
+- VAD: `from src.voice import create_vad_params, create_vad_processor`
+- Pipeline uses `route_to_agent()` from `src.agents.supervisor` inside AgentBridgeProcessor
+- `/test/simulate-call` calls `route_to_agent()` directly (pipecat's streaming audio lifecycle is incompatible with synchronous text simulation)
+- Lifespan starts WebSocket server on `TelephonySettings.websocket_port` (default 8765)
+- Instruments: `active_voice_sessions` (gauge), `voice_to_voice_latency_ms` (histogram), `asr_latency_ms`, `tts_latency_ms`
+
+### Known Limitations
+- ASR/TTS are stubs — real Intron/Cartesia integration activated via `USE_REAL_ASR=true` / `USE_REAL_TTS=true` (future phase)
+- VAD is structurally included but won't process real audio in stub mode
+- FillerProcessor logs only — no actual filler audio playback yet
+- WebSocket server logs connections but doesn't process audio
+- `/test/simulate-call` bypasses pipecat pipeline, calls `route_to_agent()` directly
+- Daily and Telnyx transports raise `NotImplementedError` — placeholders for future telephony integration

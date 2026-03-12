@@ -41,15 +41,23 @@ async def test_metrics_returns_prometheus_exposition(client: AsyncClient) -> Non
 
 
 @pytest.mark.asyncio
-async def test_simulate_call_stub(client: AsyncClient) -> None:
+async def test_simulate_call_returns_pipeline_response(
+    client: AsyncClient,
+) -> None:
     resp = await client.post(
         "/test/simulate-call",
         json={"phone_number": "+2348012345678", "text": "Ina so in biya kuɗi"},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["response"] == "Pipeline not yet connected"
-    assert body["session_id"] == "stub"
+    # Pipeline is wired — response comes from agent supervisor
+    assert "response" in body
+    assert isinstance(body["response"], str)
+    assert len(body["response"]) > 0
+    assert "session_id" in body
+    assert "intent" in body
+    assert "latency_ms" in body
+    assert isinstance(body["latency_ms"], (int, float))
 
 
 @pytest.mark.asyncio
@@ -65,3 +73,5 @@ async def test_simulate_call_with_session_id(client: AsyncClient) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["session_id"] == "test-session-123"
+    assert "response" in body
+    assert "intent" in body

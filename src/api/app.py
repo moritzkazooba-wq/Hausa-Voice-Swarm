@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import uuid4
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -15,8 +18,14 @@ from strawberry.fastapi import GraphQLRouter
 
 # Import definitions to ensure metrics are registered at import time
 import src.metrics.definitions as _metrics_defs  # noqa: F401
+from src.agents.supervisor import route_to_agent
 from src.api.schema import GraphQLContext, schema
+from src.config.settings import TelephonySettings
+from src.metrics.definitions import active_voice_sessions, voice_to_voice_latency_ms
 from src.metrics.middleware import MetricsMiddleware
+from src.voice.ws_server import start_ws_server
+
+logger = structlog.get_logger()
 
 # Module-level readiness flag.
 # Fine for single-worker dev; for production, replace with a DB check.
@@ -33,11 +42,17 @@ class SimulateCallRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Startup/shutdown lifecycle."""
+    """Startup/shutdown lifecycle — starts WebSocket server."""
     global _ready
+    settings = TelephonySettings()
+    ws_server = await start_ws_server(settings.websocket_port)
     _ready = True
+    await logger.ainfo("app_started", ws_port=settings.websocket_port)
     yield
     _ready = False
+    ws_server.close()
+    await ws_server.wait_closed()
+    await logger.ainfo("app_stopped")
 
 
 def _get_context() -> GraphQLContext:
@@ -87,14 +102,32 @@ def create_app() -> FastAPI:
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
-    # Simulate-call stub (wired to real pipeline in Phase 7a)
+    # Simulate-call — exercises the same agent routing as the voice pipeline
     @app.post("/test/simulate-call")
     async def simulate_call(req: SimulateCallRequest) -> JSONResponse:
+        session_id = req.session_id or str(uuid4())
+
+        active_voice_sessions.inc()
+        start = time.monotonic()
+
+        try:
+            result, classification = await route_to_agent(
+                session_id,
+                req.text,
+            )
+        finally:
+            active_voice_sessions.dec()
+
+        latency_ms = (time.monotonic() - start) * 1000.0
+        voice_to_voice_latency_ms.observe(latency_ms)
+
         return JSONResponse(
             {
-                "response": "Pipeline not yet connected",
-                "session_id": req.session_id or "stub",
-            }
+                "response": result.message,
+                "session_id": session_id,
+                "intent": classification.intent,
+                "latency_ms": round(latency_ms, 1),
+            },
         )
 
     return app
