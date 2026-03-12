@@ -3,24 +3,7 @@
 from __future__ import annotations
 
 import pytest
-import src.api.app as app_module
-from httpx import ASGITransport, AsyncClient
-from src.api.app import create_app
-
-
-@pytest.fixture
-def app():
-    return create_app()
-
-
-@pytest.fixture
-async def client(app):
-    # ASGITransport doesn't run lifespan, so set _ready manually.
-    app_module._ready = True
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app_module._ready = False
+from httpx import AsyncClient
 
 
 @pytest.mark.asyncio

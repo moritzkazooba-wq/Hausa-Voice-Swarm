@@ -11,11 +11,6 @@ from src.models.transaction import ActionResult
 from src.voice.agent_bridge import AgentBridgeProcessor
 
 
-@pytest.fixture
-def bridge() -> AgentBridgeProcessor:
-    return AgentBridgeProcessor(session_id="test-session-001")
-
-
 @pytest.mark.asyncio
 async def test_bridge_processes_transcription_to_text(
     bridge: AgentBridgeProcessor,
