@@ -144,3 +144,61 @@ Tracks what has been built, key file paths, and interface contracts.
 - `/test/simulate-call` is a stub — wired to voice pipeline in Phase 7a
 - No authentication middleware yet (future phase)
 - `_ready` flag is module-level — for multi-worker production, replace with DB connectivity check
+
+---
+
+## Phase 3: Database Layer with Seed Data
+
+### Key Files Created/Modified
+- `src/db/engine.py` — async engine singleton + session factory
+- `src/db/models.py` — `AccountModel`, `TransactionModel`, `PlanModel` (SQLAlchemy ORM)
+- `src/db/repositories.py` — `AccountRepository`, `TransactionRepository`
+- `src/db/session_store.py` — `SessionStore` (Redis, TTL 30 min)
+- `src/db/seed.py` — seed script (10K accounts, 100K txns, 5 plans)
+- `src/db/__init__.py` — re-exports all DB components
+- `alembic.ini` + `src/db/migrations/` — Alembic async migration setup
+- `src/db/migrations/versions/001_initial_schema.py` — accounts, transactions, plans tables
+- `src/api/resolvers.py` — resolver dispatch (mock vs. real DB)
+- `src/api/dataloader.py` — DataLoaders accept optional `session_factory`
+- `src/api/schema.py` — mutations route through `resolvers` module
+- `src/api/app.py` — lifespan initializes DB engine when `mock_resolvers=false`
+- `src/config/settings.py` — added `mock_resolvers: bool = True` to `AppSettings`
+- `tests/db/test_session_store.py` — 8 tests (fakeredis)
+- `tests/db/test_repositories.py` — 9 tests (`@pytest.mark.db`, skipped without DB)
+
+### Public Interfaces
+
+**Engine:**
+- `async init_engine(url: str, pool_size: int = 10) -> None`
+- `async dispose_engine() -> None`
+- `get_engine() -> AsyncEngine`
+- `get_session_factory() -> async_sessionmaker[AsyncSession]`
+
+**ORM Models:** `AccountModel`, `TransactionModel`, `PlanModel` — each has `to_pydantic()` method
+
+**Repositories:**
+- `AccountRepository(session)`: `get_by_phone`, `get_by_id`, `get_batch_by_phones`, `update_balance`, `update_plan`
+- `TransactionRepository(session)`: `get_by_account(limit)`, `get_batch_by_accounts`, `create_transaction`
+
+**Session Store:**
+- `SessionStore(redis, ttl_seconds)`: `get_session`, `save_session`, `extend_ttl`, `delete_session`
+
+**Resolver Dispatch (src/api/resolvers.py):**
+- `get_customers_batch_db(session_factory, phones)`, `get_transactions_batch_db(session_factory, ids)`
+- `get_network_status`, `process_payment`, `reset_pin`, `change_plan`, `create_escalation_ticket`
+
+**Seed:** `python -m src.db.seed [--check-empty]`
+
+### Integration Points
+- `from src.db import init_engine, get_session_factory, AccountRepository, ...`
+- `AppSettings.mock_resolvers` controls mock vs. real DB (default: True)
+- DataLoaders: `create_account_loader(session_factory=None)` — None = mock mode
+- GraphQLContext: `GraphQLContext(session_factory=None)` — passed from app lifespan
+- Alembic: `COCKROACHDB_URL=... uv run alembic upgrade head`
+
+### Known Limitations
+- Mutations still return mock `ActionResult` (real mutation logic deferred to agent layer)
+- `NetworkStatus` has no DB table — stays mock
+- Seed script uses `random` (not crypto-safe) — fine for test data
+- No Alembic `downgrade` tested in CI yet
+- DB repository tests require running CockroachDB (`COCKROACHDB_URL` env var)
