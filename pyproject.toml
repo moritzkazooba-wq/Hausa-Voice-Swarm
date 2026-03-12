@@ -1,0 +1,106 @@
+[project]
+name = "hausa-voice-swarm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiokafka>=0.10",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "fastapi>=0.110",
+    "httpx>=0.27",
+    "langgraph>=0.2",
+    "litellm>=1.30",
+    "pipecat-ai[daily,silero]>=0.0.40",
+    "prometheus-client>=0.20",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.1",
+    "redis[hiredis]>=5.0",
+    "sentence-transformers>=2.5",
+    "sqlalchemy[asyncio]>=2.0",
+    "strawberry-graphql[fastapi]>=0.220",
+    "structlog>=24.1",
+    "tenacity>=8.2",
+    "uvicorn[standard]>=0.41.0",
+]
+
+[dependency-groups]
+dev = [
+    "fakeredis[lua]>=2.34.1",
+    "mypy>=1.8",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-httpx>=0.36.0",
+    "ruff>=0.3",
+]
+
+# ── Tool Configuration ──────────────────────────────────────────────
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_any_generics = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "pipecat.*",
+    "daily.*",
+    "aiokafka.*",
+    "litellm.*",
+    "prometheus_client.*",
+    "sentence_transformers.*",
+    "strawberry.*",
+    "langgraph.*",
+    "langchain_core.*",
+    "redis.*",
+    "fakeredis.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "ASYNC",# flake8-async
+    "S",    # flake8-bandit
+    "T20",  # flake8-print
+    "RUF",  # ruff-specific
+]
+ignore = ["S101"]  # allow assert in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["hausa_voice_swarm"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "db: tests requiring CockroachDB connection",
+    "e2e: end-to-end tests requiring docker-compose stack",
+]

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# Type checking & linting
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+*.env.local
+
+# Kubernetes secrets
+k8s/secrets.yml
+
+# ML model caches
+sentence_transformers_cache/
+.cache/
+
+# Audio placeholders
+*.wav
+
+# IDE
+.idea/
+.vscode/
