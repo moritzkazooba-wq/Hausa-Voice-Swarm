@@ -377,3 +377,48 @@ Tracks what has been built, key file paths, and interface contracts.
 - Real CartesiaTTS assumes Cartesia `/tts/bytes` endpoint — API contract assumed
 - No retry logic on real HTTP calls (add tenacity in production hardening)
 - ASR stub text is canned ("Ina so in duba balance dina" / "Ina so in biya kuɗi") — sufficient for dev
+
+---
+
+## Phase 7c: Session Management and Graceful Shutdown
+
+### Key Files Created/Modified
+- `src/voice/session_manager.py` — `SessionManager` class managing session lifecycle (start, turn, end, persist)
+- `src/voice/shutdown.py` — `GracefulShutdown` class coordinating SIGTERM → drain → persist → exit
+- `src/voice/__init__.py` — Re-exports `SessionManager`, `GracefulShutdown`
+- `tests/voice/test_session_manager.py` — 13 tests (start, restore, turns, end, shutdown persistence)
+- `tests/voice/test_shutdown.py` — 5 tests (initial state, drain, persist, wait)
+- `tests/voice/test_full_pipeline.py` — 4 integration tests (complete call, restart after shutdown, concurrent sessions, escalation)
+
+### Public Interfaces
+
+**SessionManager:**
+- `SessionManager(redis, producer?, settings?)` — manages voice session lifecycle
+- `on_session_start(session_id, phone_number, *, channel="voice", language="ha") -> SessionState` — creates/restores session, looks up customer via mock resolvers, stores in Redis, publishes SessionStartedEvent, increments gauge
+- `on_turn_complete(session_id, user_text, agent_response, *, intent, confidence, v2v_latency_ms, agent_name) -> SessionState | None` — appends conversation turns, updates intent/confidence, extends TTL, records v2v latency
+- `on_session_end(session_id, reason) -> None` — records duration, publishes SessionEndedEvent, decrements gauge, removes from Redis
+- `persist_for_shutdown(session_id) -> bool` — extends TTL to 1 hour for graceful shutdown
+- `active_sessions` property — set of active session IDs
+- `active_count` property — number of active sessions
+
+**GracefulShutdown:**
+- `GracefulShutdown(session_manager, *, max_drain_seconds=300)` — coordinates graceful shutdown
+- `install_signal_handlers()` — installs SIGTERM/SIGINT handlers
+- `is_shutting_down` property — whether shutdown has been initiated
+- `shutdown_complete` property — asyncio.Event set when shutdown is fully complete
+- `wait_for_shutdown()` — blocks until shutdown is complete
+
+### Integration Points
+- Session manager: `from src.voice import SessionManager`
+- Shutdown: `from src.voice import GracefulShutdown`
+- Customer lookup: uses `src.api.mock_resolvers.get_customer()` directly (replaced by real DB in Phase 3)
+- Events: publishes `SessionStartedEvent` and `SessionEndedEvent` via `KafkaEventProducer`
+- Metrics: instruments `active_voice_sessions` (gauge), `session_duration_seconds` (histogram), `voice_to_voice_latency_ms` (histogram)
+- Redis: stores `SessionState` as JSON with key `session:{session_id}`, TTL 30 min (1 hour during shutdown)
+- Session restoration: `on_session_start` checks Redis first — enables Project C cross-channel resumption
+
+### Known Limitations
+- Customer lookup uses mock resolvers — real AccountRepository integration in Phase 3
+- GracefulShutdown signal handlers require a running asyncio event loop
+- No automatic session timeout detection — sessions rely on explicit `on_session_end` or Redis TTL expiry
+- Shutdown persists sessions with 1-hour TTL — if new instance doesn't restore within 1 hour, session is lost
