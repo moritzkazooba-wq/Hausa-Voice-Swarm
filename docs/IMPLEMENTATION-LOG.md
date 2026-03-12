@@ -329,3 +329,51 @@ Tracks what has been built, key file paths, and interface contracts.
 - WebSocket server logs connections but doesn't process audio
 - `/test/simulate-call` bypasses pipecat pipeline, calls `route_to_agent()` directly
 - Daily and Telnyx transports raise `NotImplementedError` — placeholders for future telephony integration
+
+---
+
+## Phase 7b: ASR and TTS Managers
+
+### Key Files Created/Modified
+- `src/voice/asr.py` — `ASRProvider` protocol, `IntronASR` (200-400ms stub, real HTTP), `WhisperASR` (300-600ms stub, Project A model), `ASRManager` (primary → fallback on failure/timeout >2s), `ASRProcessor` (pipecat FrameProcessor)
+- `src/voice/tts.py` — `TTSProvider` protocol, `IntronTTS` (Hausa, 150-300ms stub), `CartesiaTTS` (English/PCM, 100-250ms stub), `TTSManager` (language-aware routing), `TTSProcessor` (pipecat FrameProcessor)
+- `src/voice/pipeline.py` — Updated to use `ASRProcessor(manager=ASRManager)` and `TTSProcessor(manager=TTSManager)` with configurable settings and language
+- `src/voice/__init__.py` — Re-exports all new public symbols
+- `src/config/settings.py` — Added `intron_asr_url`, `asr_timeout_seconds` to ASRSettings; added `intron_api_key`, `intron_tts_url`, `cartesia_api_key`, `cartesia_tts_url` to TTSSettings
+- `tests/voice/test_asr.py` — 16 tests (providers, fallback chain, timeout, metrics, processor)
+- `tests/voice/test_tts.py` — 15 tests (providers, language routing, metrics, processor, end-to-end)
+
+### Public Interfaces
+
+**ASR Provider Protocol:**
+- `ASRProvider` — `name` property, `transcribe(audio: bytes) -> str`
+- `IntronASR(settings?)` — stub 200-400ms; real HTTP via `intron_asr_url` when `USE_REAL_ASR=true`
+- `WhisperASR(settings?)` — stub 300-600ms; `whisper_model_path` for Project A model (future)
+- `ASRManager(primary?, fallback?, settings?)` — `transcribe(audio) -> tuple[str, str]` with timeout/fallback
+- `ASRProcessor(manager?, settings?)` — pipecat FrameProcessor wrapping ASRManager
+
+**TTS Provider Protocol:**
+- `TTSProvider` — `name` property, `supported_languages` property, `synthesize(text) -> bytes`
+- `IntronTTS(settings?)` — Hausa TTS, stub 150-300ms; real HTTP when `USE_REAL_TTS=true`
+- `CartesiaTTS(settings?)` — English/PCM TTS, stub 100-250ms; real HTTP when `USE_REAL_TTS=true`
+- `TTSManager(settings?, intron?, cartesia?)` — `synthesize(text, language="ha") -> tuple[bytes, str]`, routes "ha"→Intron, "en"/"pcm"→Cartesia
+- `TTSProcessor(manager?, settings?, language="ha")` — pipecat FrameProcessor wrapping TTSManager
+
+**Pipeline:**
+- `create_voice_pipeline(transport, session_id, *, asr_settings?, tts_settings?, language="ha")`
+
+### Integration Points
+- ASR: `from src.voice import ASRManager, ASRProcessor, IntronASR, WhisperASR`
+- TTS: `from src.voice import TTSManager, TTSProcessor, IntronTTS, CartesiaTTS`
+- ASR fallback: configurable via `ASRSettings.asr_fallback_enabled` and `asr_timeout_seconds`
+- TTS routing: `TTSManager.provider_for(language)` maps language code to provider
+- Metrics: `asr_latency_ms.labels(model=provider_name, intent="unknown")` and `tts_latency_ms.labels(model=provider_name, intent="unknown")`
+- Real API activation: `USE_REAL_ASR=true` + `INTRON_API_KEY`, `USE_REAL_TTS=true` + `INTRON_API_KEY` / `CARTESIA_API_KEY`
+- TranscriptionFrame passes through TTSProcessor unchanged (it's a TextFrame subclass)
+
+### Known Limitations
+- Real IntronASR uses HTTP POST to `intron_asr_url` — API contract assumed, needs validation against actual Intron API
+- Real WhisperASR raises `NotImplementedError` — model loading from `whisper_model_path` deferred to Project A integration
+- Real CartesiaTTS assumes Cartesia `/tts/bytes` endpoint — API contract assumed
+- No retry logic on real HTTP calls (add tenacity in production hardening)
+- ASR stub text is canned ("Ina so in duba balance dina" / "Ina so in biya kuɗi") — sufficient for dev

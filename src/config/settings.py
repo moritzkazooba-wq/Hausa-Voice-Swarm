@@ -24,8 +24,10 @@ class ASRSettings(BaseSettings):
 
     asr_provider: Literal["intron", "whisper"] = "intron"
     intron_api_key: str = ""
+    intron_asr_url: str = "https://api.intron.io/v1/asr"
     whisper_model_path: str = ""
     asr_fallback_enabled: bool = True
+    asr_timeout_seconds: float = 2.0
     use_real_asr: bool = False
 
 
@@ -36,6 +38,10 @@ class TTSSettings(BaseSettings):
 
     hausa_provider: str = "intron"
     english_provider: str = "cartesia"
+    intron_api_key: str = ""
+    intron_tts_url: str = "https://api.intron.io/v1/tts"
+    cartesia_api_key: str = ""
+    cartesia_tts_url: str = "https://api.cartesia.ai/tts/bytes"
     filler_audio_dir: str = "assets/fillers"
     use_real_tts: bool = False
 
