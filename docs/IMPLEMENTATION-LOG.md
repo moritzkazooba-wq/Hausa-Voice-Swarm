@@ -144,3 +144,59 @@ Tracks what has been built, key file paths, and interface contracts.
 - `/test/simulate-call` is a stub — wired to voice pipeline in Phase 7a
 - No authentication middleware yet (future phase)
 - `_ready` flag is module-level — for multi-worker production, replace with DB connectivity check
+
+---
+
+## Phase 4c: Technical Agent, Escalation Agent, Integration Tests
+
+### Key Files Created/Modified
+- `src/agents/base.py` — `BaseAgent` ABC, `AgentResponse` dataclass
+- `src/agents/intent.py` — `classify_intent()` keyword matcher, `IntentResult` dataclass
+- `src/agents/orchestrator.py` — `Supervisor` (orchestrator-worker routing, confidence gating)
+- `src/agents/__init__.py` — re-exports `BaseAgent`, `AgentResponse`, `Supervisor`, `classify_intent`, `IntentResult`
+- `src/agents/domains/balance.py` — `BalanceAgent` (gemini-flash, balance lookup via mock_resolvers)
+- `src/agents/domains/transfer.py` — `TransferAgent` (gpt-4o, requires_confirmation)
+- `src/agents/domains/bills.py` — `BillPaymentAgent` (gpt-4o, requires_confirmation)
+- `src/agents/domains/general.py` — `GeneralAgent` (gemini-flash, greeting/goodbye/FAQ)
+- `src/agents/domains/technical.py` — `TechnicalAgent` (gpt-4o, networkStatus query, step-by-step guidance)
+- `src/agents/domains/escalation.py` — `EscalationAgent` (gpt-4o, createEscalationTicket mutation, mock wait time)
+- `src/agents/domains/__init__.py` — re-exports all 6 domain agents
+- `tests/agents/test_integration.py` — 11 integration tests (full orchestration chain)
+
+### Public Interfaces
+
+**Base:**
+- `BaseAgent` — ABC with `async handle(user_message, session, history) -> AgentResponse`
+- `AgentResponse(message, action_result?, route_to?, metadata?)`
+
+**Intent Classification:**
+- `classify_intent(text: str) -> IntentResult` — keyword-based, Hausa + English code-switching
+- `IntentResult(intent, confidence, top_intents)` — 9 intents: check_balance, transfer_money, pay_bill, pin_reset, technical_issue, speak_to_human, greeting, goodbye, general
+
+**Supervisor (Orchestrator):**
+- `Supervisor.route(user_message, session) -> tuple[AgentResponse, SessionState]`
+- Routes by intent; escalates when confidence < 0.5
+- `CONFIDENCE_THRESHOLD = 0.5`
+- `INTENT_AGENT_MAP` — maps intent strings to agent classes
+
+**Domain Agents (all implement `BaseAgent.handle`):**
+- `BalanceAgent` — queries `get_customer()`, returns balance + plan
+- `TransferAgent` — calls `process_payment()`, returns `requires_confirmation=True`
+- `BillPaymentAgent` — calls `process_payment()`, returns `requires_confirmation=True`
+- `GeneralAgent` — greeting/goodbye responses, general help
+- `TechnicalAgent` — calls `get_network_status()`, returns diagnostics (healthy/degraded/down)
+- `EscalationAgent` — calls `create_escalation_ticket()`, returns ticket ref + estimated wait time
+
+### Integration Points
+- Orchestrator entry: `from src.agents import Supervisor; s = Supervisor(); resp, session = await s.route(msg, session)`
+- Agents consume `src.api.mock_resolvers` for data (replace with real DB repositories later)
+- Agents consume `src.models.SessionState` for conversation state
+- `EscalationAgent` triggered by: `speak_to_human` intent, confidence < 0.5, or emotional distress detection (future)
+- `TechnicalAgent` queries `get_network_status(region)` from mock_resolvers
+
+### Known Limitations
+- Intent classifier uses keyword matching — swap to sentence-transformers cosine similarity for production
+- `TechnicalAgent` defaults to `"kano"` region (SessionState lacks `region` field — add in future phase)
+- No LiteLLM integration yet — agents return static/mock responses; `MOCK_LLM=true` assumed
+- `EscalationAgent` uses hardcoded wait times per region — wire to real queue metrics later
+- No emotional distress detection — escalation only via explicit intent or low confidence
