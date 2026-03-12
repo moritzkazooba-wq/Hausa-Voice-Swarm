@@ -94,6 +94,9 @@ select = [
 ]
 ignore = ["S101"]  # allow assert in tests
 
+[tool.ruff.lint.per-file-ignores]
+"src/db/seed.py" = ["S311", "T20"]  # seed script uses random (not crypto) and print
+
 [tool.ruff.lint.isort]
 known-first-party = ["hausa_voice_swarm"]
 

@@ -14,6 +14,7 @@ class AppSettings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     mock_llm: bool = True
+    mock_resolvers: bool = True
     api_base_url: str = "http://localhost:8000"
 
 

@@ -5,10 +5,11 @@ from decimal import Decimal
 from uuid import UUID
 
 import strawberry
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from strawberry.fastapi import BaseContext
 from strawberry.types import Info
 
-from src.api import mock_resolvers
+from src.api import resolvers
 from src.api.dataloader import create_account_loader, create_transaction_loader
 from src.models.customer import CustomerProfile, NetworkStatus
 from src.models.transaction import ActionResult, Transaction
@@ -115,10 +116,13 @@ def _network_to_type(ns: NetworkStatus) -> NetworkStatusType:
 class GraphQLContext(BaseContext):
     """Custom context providing DataLoaders."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
         super().__init__()
-        self.account_loader = create_account_loader()
-        self.transaction_loader = create_transaction_loader()
+        self.account_loader = create_account_loader(session_factory)
+        self.transaction_loader = create_transaction_loader(session_factory)
 
 
 # --- Query ---
@@ -153,7 +157,7 @@ class Query:
     @strawberry.field
     async def network_status(self, region: str) -> NetworkStatusType | None:
         """Get network health status for a region."""
-        ns = await mock_resolvers.get_network_status(region)
+        ns = await resolvers.get_network_status(region)
         if ns is None:
             return None
         return _network_to_type(ns)
@@ -171,13 +175,13 @@ class Mutation:
         self, phone_number: str, amount: float, merchant: str
     ) -> ActionResultType:
         """Process a payment (requires confirmation)."""
-        result = await mock_resolvers.process_payment(phone_number, amount, merchant)
+        result = await resolvers.process_payment(phone_number, amount, merchant)
         return _action_to_type(result)
 
     @strawberry.mutation
     async def reset_pin(self, phone_number: str) -> ActionResultType:
         """Reset account PIN (requires confirmation)."""
-        result = await mock_resolvers.reset_pin(phone_number)
+        result = await resolvers.reset_pin(phone_number)
         return _action_to_type(result)
 
     @strawberry.mutation
@@ -185,7 +189,7 @@ class Mutation:
         self, phone_number: str, new_plan: str
     ) -> ActionResultType:
         """Change service plan (requires confirmation)."""
-        result = await mock_resolvers.change_plan(phone_number, new_plan)
+        result = await resolvers.change_plan(phone_number, new_plan)
         return _action_to_type(result)
 
     @strawberry.mutation
@@ -193,7 +197,7 @@ class Mutation:
         self, phone_number: str, issue: str
     ) -> ActionResultType:
         """Create an escalation ticket (requires confirmation)."""
-        result = await mock_resolvers.create_escalation_ticket(phone_number, issue)
+        result = await resolvers.create_escalation_ticket(phone_number, issue)
         return _action_to_type(result)
 
 

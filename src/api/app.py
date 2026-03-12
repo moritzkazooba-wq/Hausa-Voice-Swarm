@@ -10,13 +10,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from strawberry.fastapi import GraphQLRouter
 
 from src.api.schema import GraphQLContext, schema
+from src.config.settings import AppSettings, DatabaseSettings
+from src.db.engine import dispose_engine, get_session_factory, init_engine
 
 # Module-level readiness flag.
 # Fine for single-worker dev; for production, replace with a DB check.
 _ready: bool = False
+
+# Module-level session factory, set during lifespan if DB is enabled.
+_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 class SimulateCallRequest(BaseModel):
@@ -30,15 +36,23 @@ class SimulateCallRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup/shutdown lifecycle."""
-    global _ready
+    global _ready, _session_factory
+    settings = AppSettings()
+    if not settings.mock_resolvers:
+        db_settings = DatabaseSettings()
+        await init_engine(db_settings.cockroachdb_url, db_settings.pool_size)
+        _session_factory = get_session_factory()
     _ready = True
     yield
     _ready = False
+    if not settings.mock_resolvers:
+        await dispose_engine()
+        _session_factory = None
 
 
 def _get_context() -> GraphQLContext:
     """Create a fresh GraphQL context with DataLoaders per request."""
-    return GraphQLContext()
+    return GraphQLContext(session_factory=_session_factory)
 
 
 def create_app() -> FastAPI:
