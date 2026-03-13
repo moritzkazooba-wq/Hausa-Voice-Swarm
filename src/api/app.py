@@ -19,9 +19,11 @@ from strawberry.fastapi import GraphQLRouter
 import src.metrics.definitions as _metrics_defs  # noqa: F401
 from src.agents.supervisor import route_to_agent
 from src.api.schema import GraphQLContext, schema
-from src.config.settings import TelephonySettings
+from src.config.settings import KafkaSettings, TelephonySettings
+from src.events.producer import KafkaEventProducer
 from src.metrics.definitions import active_voice_sessions, voice_to_voice_latency_ms
 from src.metrics.middleware import MetricsMiddleware
+from src.utils.logging import configure_logging
 from src.voice.ws_server import start_ws_server
 
 logger = structlog.get_logger()
@@ -41,14 +43,33 @@ class SimulateCallRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Startup/shutdown lifecycle — starts WebSocket server."""
+    """Startup/shutdown lifecycle — logging, Kafka producer, WebSocket server."""
     global _ready
+
+    configure_logging()
+
     settings = TelephonySettings()
     ws_server = await start_ws_server(settings.websocket_port)
+
+    # Start Kafka event producer
+    kafka_settings = KafkaSettings()
+    producer = KafkaEventProducer(kafka_settings)
+    try:
+        await producer.start()
+    except Exception:
+        await logger.awarning("kafka_producer_start_failed", exc_info=True)
+    app.state.kafka_producer = producer
+
     _ready = True
     await logger.ainfo("app_started", ws_port=settings.websocket_port)
     yield
     _ready = False
+
+    # Shutdown
+    try:
+        await producer.stop()
+    except Exception:
+        await logger.awarning("kafka_producer_stop_failed", exc_info=True)
     ws_server.close()
     await ws_server.wait_closed()
     await logger.ainfo("app_stopped")

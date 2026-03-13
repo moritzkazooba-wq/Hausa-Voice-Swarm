@@ -1,31 +1,18 @@
-"""Supervisor that routes utterances to domain agents via intent classification.
+"""Supervisor that routes utterances to domain agents via LangGraph orchestrator.
 
-Uses the orchestrator-worker pattern: the supervisor classifies intent, then
-delegates to the appropriate domain agent.
+Wraps the LangGraph StateGraph execution and converts the result back to
+the ``(ActionResult, ClassificationResult)`` tuple expected by callers.
 """
 
 from __future__ import annotations
 
 import structlog
 
-from src.agents.domains.balance import BalanceAgent
-from src.agents.domains.base import BaseDomainAgent
-from src.agents.domains.bills import BillsAgent
-from src.agents.domains.general import GeneralAgent
-from src.agents.domains.transfer import TransferAgent
-from src.agents.intent import ClassificationResult, classify_intent
-from src.metrics.definitions import agent_routing_total
+from src.agents.intent import ClassificationResult
+from src.agents.orchestrator import run_orchestrator
 from src.models.transaction import ActionResult
 
 logger = structlog.get_logger()
-
-# Map intent labels to agent instances
-_AGENT_MAP: dict[str, BaseDomainAgent] = {
-    "balance": BalanceAgent(),
-    "transfer": TransferAgent(),
-    "bills": BillsAgent(),
-    "general": GeneralAgent(),
-}
 
 
 async def route_to_agent(
@@ -34,23 +21,31 @@ async def route_to_agent(
 ) -> tuple[ActionResult, ClassificationResult]:
     """Classify intent and route to the appropriate domain agent.
 
-    Returns both the action result and the classification result for
-    downstream consumers (e.g. Kafka events, metrics).
+    Delegates to the LangGraph orchestrator graph, then maps the final
+    state back to ``ActionResult`` and ``ClassificationResult``.
     """
-    classification = await classify_intent(utterance)
-    target_agent = classification.intent
+    state = await run_orchestrator(session_id, utterance)
 
-    agent_routing_total.labels(target_agent=target_agent).inc()
+    action_result = ActionResult(
+        success=state["success"],
+        message=state["response"],
+        requires_confirmation=state["requires_confirmation"],
+    )
 
-    agent = _AGENT_MAP.get(target_agent, _AGENT_MAP["general"])
-    result = await agent.run(session_id, utterance)
+    classification = ClassificationResult(
+        intent=state["intent"],  # type: ignore[arg-type]
+        confidence=state["confidence"],
+        utterance=state["utterance"],
+        classifier_type=state["classifier_type"],
+        elapsed_ms=0.0,  # timing captured in the graph nodes
+    )
 
     await logger.ainfo(
         "supervisor_routed",
         session_id=session_id,
-        target_agent=target_agent,
-        confidence=classification.confidence,
-        success=result.success,
+        target_agent=state["intent"],
+        confidence=state["confidence"],
+        success=state["success"],
     )
 
-    return result, classification
+    return action_result, classification
