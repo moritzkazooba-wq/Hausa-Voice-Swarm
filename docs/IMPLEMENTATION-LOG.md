@@ -442,3 +442,54 @@ Tracks what has been built, key file paths, and interface contracts.
 - No Ingress resource — voice-pipeline uses LoadBalancer directly
 - No TLS termination configured on services
 - Container images (`hsv-voice-pipeline`, `hsv-agent-api`) reference local tags — update with registry paths for production
+
+---
+
+## Phase 11: Load Testing
+
+### Key Files Created/Modified
+- `benchmarks/utterances.js` — shared Hausa/English/code-switch utterance corpus, grouped by intent
+- `benchmarks/collect_results.py` — Prometheus → markdown report generator (PromQL queries)
+- `benchmarks/local/smoke.js` — k6 smoke test: 1 VU, 5 iterations, p95 < 2000ms threshold
+- `benchmarks/local/local_load.js` — k6 local load: 1→10 VUs, 5 min, 3-turn conversations, weighted intent mix
+- `benchmarks/cluster/ramp_up.js` — k6 ramp-up (REQUIRES GKE): 1→50 VUs over 10 min
+- `benchmarks/cluster/sustained.js` — k6 sustained (REQUIRES GKE): 50 VUs for 30 min, 3-turn sessions
+- `benchmarks/cluster/burst.js` — k6 burst (REQUIRES GKE): spike 10→100 VUs in 2 min
+- `benchmarks/cluster/failure.js` — k6 chaos (REQUIRES GKE): 50 VUs + pod kill, custom `recovery_errors` counter
+- `Makefile` — build/test/load-test targets
+
+### Public Interfaces
+
+**Shared Utterances (`benchmarks/utterances.js`):**
+- `INTENTS` — object mapping intent names to arrays of utterances (balance, transfer, bills, general)
+- `randomUtterance() -> {intent, text}` — pick random utterance from any intent
+- `utteranceForIntent(intent) -> string` — pick random utterance for a specific intent
+- `weightedIntent() -> string` — weighted random: balance 35%, transfer 25%, bills 20%, general 20%
+
+**Results Collector (`benchmarks/collect_results.py`):**
+- `collect(base_url: str) -> dict[str, str]` — query Prometheus for key metrics
+- `render_report(metrics: dict[str, str]) -> str` — format metrics as markdown table
+- CLI: `python benchmarks/collect_results.py [--prometheus URL] [--output FILE]`
+
+**Makefile Targets:**
+- `make load-smoke` — run smoke test (BASE_URL configurable)
+- `make load-local` — run local load test
+- `make load-ramp` — run ramp-up test (CLUSTER_URL configurable)
+- `make load-sustained` — run sustained load test
+- `make load-burst` — run burst test
+- `make load-chaos` — run failure/chaos test
+- `make load-report` — generate markdown report from Prometheus
+
+### Integration Points
+- All k6 tests target `POST /test/simulate-call` from `src/api/app.py`
+- `collect_results.py` queries `hsv_*` metrics defined in `src/metrics/definitions.py`
+- Cluster tests default to `http://voice-pipeline.hausa-voice-swarm.svc:8000` (K8s service from Phase 9)
+- Failure test designed to run alongside `kubectl delete pod -l app=voice-pipeline`
+- Makefile also includes `lint`, `typecheck`, `test`, `test-e2e` targets wrapping existing `uv run` commands
+
+### Known Limitations
+- k6 must be installed separately (not managed by uv)
+- Cluster tests require GKE cluster with Phase 9 manifests applied
+- `collect_results.py` uses stdlib `urllib` only — no additional Python dependencies needed
+- Failure test requires manual pod deletion (no automated chaos injection)
+- Report generator produces instant-query snapshots — no time-range analysis
