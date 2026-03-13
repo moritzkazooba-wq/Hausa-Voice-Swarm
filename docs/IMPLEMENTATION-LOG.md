@@ -442,3 +442,63 @@ Tracks what has been built, key file paths, and interface contracts.
 - No Ingress resource — voice-pipeline uses LoadBalancer directly
 - No TLS termination configured on services
 - Container images (`hsv-voice-pipeline`, `hsv-agent-api`) reference local tags — update with registry paths for production
+
+---
+
+## Phase 10: Terraform Infrastructure
+
+### Key Files Created/Modified
+
+**Root (`infrastructure/`):**
+- `versions.tf` — Terraform >= 1.5, providers: google ~> 5.0, google-beta, helm ~> 2.0, kubernetes ~> 2.0
+- `backend.tf` — GCS state backend (placeholder bucket `hsv-terraform-state`)
+- `variables.tf` — 22 root variables (project, region, pool config, service toggles)
+- `main.tf` — Provider config from GKE outputs, 6 module calls wired together
+- `outputs.tf` — Cluster endpoint, Redis/Kafka/CockroachDB connection strings, kubeconfig command
+
+**Modules (`infrastructure/modules/`):**
+- `networking/` — VPC, subnet with pod/service secondary ranges, Cloud NAT, 3 firewall rules, private service access
+- `gke/` — GKE cluster (Workload Identity, VPA, managed Prometheus), 3 node pools (voice-gpu, agent-cpu, database)
+- `redis/` — Memorystore STANDARD_HA, private service access, volatile-lru eviction
+- `kafka/` — Confluent Cloud placeholder with commented resources and topic definitions
+- `monitoring/` — kube-prometheus-stack Helm chart (Prometheus, Grafana, Alertmanager)
+- `cockroachdb/` — Dual mode: Serverless (default) or self-hosted via Helm on database node pool
+
+**Environments (`infrastructure/environments/`):**
+- `dev.tfvars` — Preemptible, no GPU, 1 node/pool, 1GB Redis, CockroachDB Serverless
+- `staging.tfvars` — Standard VMs, 1 GPU node, 2 nodes/pool, 2GB Redis, Serverless
+- `production.tfvars` — Regional HA cluster, 2 GPU nodes, 3 nodes/pool, 5GB Redis, self-hosted CockroachDB
+
+### Public Interfaces
+
+**Root Outputs:**
+- `cluster_endpoint` — GKE API server endpoint
+- `cluster_name` — GKE cluster name
+- `redis_host`, `redis_port`, `redis_connection_string` — Memorystore connection
+- `kafka_bootstrap_servers` — Confluent Cloud bootstrap servers
+- `cockroachdb_connection_string` — CockroachDB connection (sensitive)
+- `prometheus_endpoint` — In-cluster Prometheus URL
+- `kubeconfig_command` — gcloud get-credentials command
+
+**Module Dependency Graph:**
+- `networking` → `gke` (network_id, subnetwork_id, range names)
+- `networking` → `redis` (network_id for private service access)
+- `gke` → `monitoring` (helm/kubernetes providers)
+- `gke` → `cockroachdb` (helm provider, when self_hosted=true)
+- `kafka` — standalone (external service)
+
+### Integration Points
+- GKE node pools match k8s manifest resource requests: voice-gpu supports 2CPU/4Gi pods, agent-cpu supports 1CPU/2Gi pods
+- GPU node pool taint `nvidia.com/gpu=present:NoSchedule` matches k8s toleration in voice-pipeline-deployment.yaml
+- Database node pool taint `workload=database:NoSchedule` isolates CockroachDB pods
+- Monitoring module sets `serviceMonitorSelectorNilUsesHelmValues=false` to discover k8s/service-monitor.yaml
+- Redis connection string format matches `src/config/settings.py` `RedisSettings.redis_url`
+- CockroachDB self-hosted connection string matches `src/config/settings.py` `DatabaseSettings.cockroachdb_url`
+
+### Known Limitations
+- GCS state bucket must be created manually before `terraform init`
+- Confluent Cloud resources are commented out — requires adding `confluentinc/confluent` provider
+- CockroachDB Serverless resources are commented out — requires adding `cockroachdb/cockroach` provider
+- GPU quota must be requested in GCP project before creating GPU node pool
+- `master_authorized_networks_config` allows `0.0.0.0/0` — restrict in production
+- Grafana admin password defaults to "admin" — override via tfvars or secrets manager
