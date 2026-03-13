@@ -17,11 +17,15 @@ from strawberry.fastapi import GraphQLRouter
 
 # Import definitions to ensure metrics are registered at import time
 import src.metrics.definitions as _metrics_defs  # noqa: F401
-from src.agents.supervisor import route_to_agent
+from src.agents.supervisor import configure_supervisor, route_to_agent
 from src.api.schema import GraphQLContext, schema
-from src.config.settings import TelephonySettings
+from src.config.settings import KafkaSettings, TelephonySettings
+from src.db.repositories import CustomerRepository
+from src.db.session_store import SessionStore
+from src.events.producer import KafkaEventProducer
 from src.metrics.definitions import active_voice_sessions, voice_to_voice_latency_ms
 from src.metrics.middleware import MetricsMiddleware
+from src.utils.logging import configure_logging
 from src.voice.ws_server import start_ws_server
 
 logger = structlog.get_logger()
@@ -41,16 +45,49 @@ class SimulateCallRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Startup/shutdown lifecycle — starts WebSocket server."""
+    """Startup/shutdown lifecycle — starts services, wires dependencies."""
     global _ready
+
+    # Structured logging
+    configure_logging()
+
+    # Session store + customer repository
+    session_store = SessionStore()
+    customer_repo = CustomerRepository()
+
+    # Kafka event producer (best-effort — app works without it)
+    kafka_producer: KafkaEventProducer | None = None
+    try:
+        kafka_producer = KafkaEventProducer(KafkaSettings())
+        await kafka_producer.start()
+    except Exception:
+        await logger.awarn("kafka_producer_start_failed")
+        kafka_producer = None
+
+    # Inject dependencies into supervisor
+    configure_supervisor(
+        session_store=session_store,
+        customer_repo=customer_repo,
+        kafka_producer=kafka_producer,
+    )
+
+    # WebSocket server
     settings = TelephonySettings()
     ws_server = await start_ws_server(settings.websocket_port)
+
     _ready = True
     await logger.ainfo("app_started", ws_port=settings.websocket_port)
+
     yield
+
     _ready = False
+
+    # Shutdown
     ws_server.close()
     await ws_server.wait_closed()
+    if kafka_producer is not None:
+        await kafka_producer.stop()
+    await session_store.close()
     await logger.ainfo("app_stopped")
 
 

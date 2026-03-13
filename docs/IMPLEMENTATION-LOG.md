@@ -548,3 +548,47 @@ Tracks what has been built, key file paths, and interface contracts.
 - `make seed` is a no-op — real DB seeding requires Alembic migrations (not yet implemented)
 - e2e tests not verified in this pass (Docker daemon unavailable)
 - README demo curls assume default mock mode (`MOCK_LLM=true`)
+
+---
+
+## Phase 14: Wire Everything Together
+
+### Key Files Created/Modified
+- `src/db/engine.py` — SQLAlchemy async engine + `async_session_factory` + `get_session()` generator
+- `src/db/session_store.py` — `SessionStore` class: Redis-backed session cache with TTL
+- `src/db/repositories.py` — `CustomerRepository` class: customer lookup (mock-backed)
+- `src/db/__init__.py` — re-exports `SessionStore`, `CustomerRepository`, `engine`, `async_session_factory`, `get_session`
+- `src/agents/intent.py` — real intent classifier using `paraphrase-multilingual-MiniLM-L12-v2` with mock fallback (`MOCK_LLM=true`)
+- `src/agents/supervisor.py` — `configure_supervisor()` for dependency injection; emits Kafka events after classification and agent execution
+- `src/agents/domains/base.py` — `BaseDomainAgent.__init__` accepts optional `session_store` and `customer_repo`
+- `src/agents/domains/balance.py` — queries `CustomerRepository` for real balance when session store is available
+- `src/api/app.py` — lifespan wires `SessionStore`, `CustomerRepository`, `KafkaEventProducer`, and `configure_logging()`
+- `Dockerfile` — added `CMD` for uvicorn
+- `tests/db/test_session_store.py` — 3 tests (save/get roundtrip, nonexistent returns None, delete)
+- `tests/db/test_repositories.py` — 2 tests (found, not found)
+- `tests/agents/test_intent.py` — 6 tests (mock mode, model-unavailable fallback, 4 real-classifier tests skipped when model unavailable)
+- `tests/e2e/test_simulate_call.py` — 5 e2e tests (health, simulate-call, custom session ID, metrics, GraphQL)
+
+### Public Interfaces
+- `SessionStore(client?, settings?)` — `.get(session_id)`, `.save(state)`, `.delete(session_id)`, `.close()`
+- `CustomerRepository()` — `.get_by_phone(phone_number) -> CustomerProfile | None`
+- `get_session() -> AsyncGenerator[AsyncSession, None]` — SQLAlchemy async session DI
+- `configure_supervisor(*, session_store?, customer_repo?, kafka_producer?)` — inject services into supervisor
+- `classify_intent(utterance, *, classifier_type)` — now supports real sentence-transformers when `MOCK_LLM=false`
+- `BaseDomainAgent(session_store?, customer_repo?)` — optional DI for domain agents
+
+### Integration Points
+- DB layer: `from src.db import SessionStore, CustomerRepository, get_session`
+- Supervisor config: `from src.agents.supervisor import configure_supervisor` — called in `src/api/app.py` lifespan
+- Kafka producer started/stopped in app lifespan; events emitted from `route_to_agent()` via `emit_intent_classified` and `emit_tool_executed`
+- `configure_logging()` from `src.utils.logging` called at app startup
+- Dockerfile now has `CMD` — `docker compose up` runs the app automatically
+- E2e tests target `http://localhost:8000` — require `docker compose up -d --build --wait`
+
+### Known Limitations
+- `CustomerRepository` uses in-memory mock data (`MOCK_CUSTOMERS`) — replace with real CockroachDB queries when ORM models are added
+- Real intent classifier requires `paraphrase-multilingual-MiniLM-L12-v2` model download — falls back gracefully to "general" if unavailable
+- Kafka producer start is best-effort — app functions without Kafka (events silently skipped)
+- `BalanceAgent` only queries real customer data when both `session_store` and `customer_repo` are injected AND a session exists for the given ID
+- No Alembic migrations — DB engine is created but no tables are defined yet
+- Daily/Telnyx transports still raise `NotImplementedError`

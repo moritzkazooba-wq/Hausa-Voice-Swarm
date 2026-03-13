@@ -14,18 +14,42 @@ from src.agents.domains.bills import BillsAgent
 from src.agents.domains.general import GeneralAgent
 from src.agents.domains.transfer import TransferAgent
 from src.agents.intent import ClassificationResult, classify_intent
+from src.db.repositories import CustomerRepository
+from src.db.session_store import SessionStore
+from src.events.producer import KafkaEventProducer
+from src.events.session_events import emit_intent_classified, emit_tool_executed
 from src.metrics.definitions import agent_routing_total
 from src.models.transaction import ActionResult
 
 logger = structlog.get_logger()
 
-# Map intent labels to agent instances
-_AGENT_MAP: dict[str, BaseDomainAgent] = {
-    "balance": BalanceAgent(),
-    "transfer": TransferAgent(),
-    "bills": BillsAgent(),
-    "general": GeneralAgent(),
-}
+# Shared services — initialized lazily or injected from app lifespan
+_session_store: SessionStore | None = None
+_customer_repo: CustomerRepository | None = None
+_kafka_producer: KafkaEventProducer | None = None
+
+
+def configure_supervisor(
+    *,
+    session_store: SessionStore | None = None,
+    customer_repo: CustomerRepository | None = None,
+    kafka_producer: KafkaEventProducer | None = None,
+) -> None:
+    """Inject shared services into the supervisor (called from app lifespan)."""
+    global _session_store, _customer_repo, _kafka_producer
+    _session_store = session_store
+    _customer_repo = customer_repo
+    _kafka_producer = kafka_producer
+
+
+def _build_agent_map() -> dict[str, BaseDomainAgent]:
+    """Build agent map with injected dependencies."""
+    return {
+        "balance": BalanceAgent(session_store=_session_store, customer_repo=_customer_repo),
+        "transfer": TransferAgent(session_store=_session_store, customer_repo=_customer_repo),
+        "bills": BillsAgent(session_store=_session_store, customer_repo=_customer_repo),
+        "general": GeneralAgent(session_store=_session_store, customer_repo=_customer_repo),
+    }
 
 
 async def route_to_agent(
@@ -42,8 +66,33 @@ async def route_to_agent(
 
     agent_routing_total.labels(target_agent=target_agent).inc()
 
-    agent = _AGENT_MAP.get(target_agent, _AGENT_MAP["general"])
+    # Emit intent classification event
+    if _kafka_producer is not None:
+        await emit_intent_classified(
+            _kafka_producer,
+            session_id=session_id,
+            utterance=utterance,
+            intent=classification.intent,
+            confidence=classification.confidence,
+            language="ha",
+            model_used=classification.classifier_type,
+        )
+
+    agent_map = _build_agent_map()
+    agent = agent_map.get(target_agent, agent_map["general"])
     result = await agent.run(session_id, utterance)
+
+    # Emit tool execution event
+    if _kafka_producer is not None:
+        await emit_tool_executed(
+            _kafka_producer,
+            session_id=session_id,
+            agent_name=agent.agent_name,
+            tool_name=f"{agent.agent_name}_execute",
+            success=result.success,
+            duration_ms=classification.elapsed_ms,
+            result_summary=result.message[:100],
+        )
 
     await logger.ainfo(
         "supervisor_routed",
