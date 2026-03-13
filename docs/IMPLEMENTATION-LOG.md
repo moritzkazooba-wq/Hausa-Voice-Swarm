@@ -493,3 +493,26 @@ Tracks what has been built, key file paths, and interface contracts.
 - `collect_results.py` uses stdlib `urllib` only — no additional Python dependencies needed
 - Failure test requires manual pod deletion (no automated chaos injection)
 - Report generator produces instant-query snapshots — no time-range analysis
+
+---
+
+## Phase 12: Cost Model and Architecture Docs
+
+### Key Files Created/Modified
+- `docs/COST-MODEL.md` — per-interaction cost breakdown at 10M/month scale, All-API vs Hybrid scenarios, sensitivity analysis
+- `docs/ARCHITECTURE.md` — Mermaid system overview + request flow diagrams, component descriptions, scaling strategy, deployment topology
+- `docs/DECISIONS.md` — 9 ADRs: Pipecat, LangGraph, cost routing, CockroachDB REGIONAL BY ROW, custom HPA, Redis sessions, Kafka telemetry, multilingual-MiniLM, uv
+
+### Public Interfaces
+- Documentation only — no code interfaces added
+
+### Integration Points
+- `docs/COST-MODEL.md` references pricing for all services in `src/voice/` (ASR/TTS), `src/agents/` (LLM routing), and `k8s/` (infrastructure)
+- `docs/ARCHITECTURE.md` Mermaid diagrams reference all source modules (`src/voice/`, `src/agents/`, `src/api/`, `src/metrics/`, `src/events/`, `src/db/`)
+- `docs/DECISIONS.md` ADRs link rationale to specific implementation choices across the codebase
+
+### Known Limitations
+- Pricing estimates are as of March 2026 — must be verified before publishing portfolio
+- Cost model assumes steady-state scale (10M/month) — does not model ramp-up period costs
+- Hybrid scenario GPU node cost is estimated — actual Whisper-Hausa inference throughput needs benchmarking
+- ADRs are point-in-time decisions — no formal review/supersede process defined
