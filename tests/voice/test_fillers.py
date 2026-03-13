@@ -10,11 +10,6 @@ from pipecat.processors.frame_processor import FrameDirection
 from src.voice.fillers import FILLER_THRESHOLD_MS, FillerProcessor
 
 
-@pytest.fixture
-def filler() -> FillerProcessor:
-    return FillerProcessor()
-
-
 @pytest.mark.asyncio
 async def test_filler_triggers_above_threshold(filler: FillerProcessor) -> None:
     """Filler should trigger when response latency exceeds threshold."""

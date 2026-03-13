@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from src.events.producer import (
     TOPIC_ESCALATIONS,
     TOPIC_INTENTS,
@@ -17,15 +16,6 @@ from src.events.schemas import (
     SessionStartedEvent,
     ToolExecutedEvent,
 )
-
-
-@pytest.fixture
-def mock_producer() -> KafkaEventProducer:
-    """Create a KafkaEventProducer with mocked internals."""
-    producer = KafkaEventProducer()
-    producer._producer = AsyncMock()
-    producer._producer.send_and_wait = AsyncMock()
-    return producer
 
 
 class TestKafkaEventProducer:

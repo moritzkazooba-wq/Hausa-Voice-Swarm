@@ -6,23 +6,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-import src.api.app as app_module
-from httpx import ASGITransport, AsyncClient
-from src.api.app import create_app
-
-
-@pytest.fixture
-def app():
-    return create_app()
-
-
-@pytest.fixture
-async def client(app):
-    app_module._ready = True
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app_module._ready = False
+from httpx import AsyncClient
 
 
 async def _gql(
