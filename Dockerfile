@@ -22,3 +22,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY --from=build --chown=app:app /app .
 USER app
 EXPOSE 8000 8765
+ENTRYPOINT ["bash", "scripts/entrypoint.sh"]

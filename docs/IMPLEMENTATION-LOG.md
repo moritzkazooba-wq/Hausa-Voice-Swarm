@@ -385,3 +385,58 @@ Tracks what has been built, key file paths, and interface contracts.
 - `mock_graphql_client` uses mock resolvers — will need update when real DB resolvers are wired
 - Layer 3 agent fixtures return mock-only agents — update when real LLM/DB integration lands
 - `voice_pipeline` fixture not yet implemented (requires async pipeline lifecycle management)
+
+---
+
+## Phase 8b: E2E Smoke Test with Docker-Compose
+
+### Key Files Created/Modified
+- `scripts/entrypoint.sh` — Docker entrypoint: waits for CockroachDB + Redis (retry loop, max 60s), runs Alembic migrations, seeds if empty, starts uvicorn
+- `Dockerfile` — added `ENTRYPOINT ["bash", "scripts/entrypoint.sh"]`
+- `docker-compose.yml` — switched from `env_file: .env` to explicit `environment` block with docker-internal hostnames; added app healthcheck (`curl -f http://localhost:8000/health`)
+- `alembic.ini` — Alembic config, reads URL from env via `alembic/env.py`
+- `alembic/env.py` — async migration runner using `async_engine_from_config`, reads `COCKROACHDB_URL` from env
+- `alembic/script.py.mako` — migration template
+- `alembic/versions/` — empty (no migrations yet)
+- `src/db/seed.py` — seed module with `--check-empty` flag (stub, no ORM models yet)
+- `tests/e2e/test_smoke.py` — 8 e2e tests across 4 scenarios
+- `Makefile` — dev-up, dev-down, seed, test, test-e2e, lint, typecheck, verify targets
+
+### Public Interfaces
+
+**Entrypoint (`scripts/entrypoint.sh`):**
+- Waits for CockroachDB via `asyncpg.connect()` (2s retry, 60s max)
+- Waits for Redis via `redis.from_url().ping()` (2s retry, 60s max)
+- Runs `alembic upgrade head` (skips gracefully if no migrations)
+- Runs `python -m src.db.seed --check-empty`
+- Starts `uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --factory`
+
+**Seed module (`src.db.seed`):**
+- `main()` — parses `--check-empty`, logs status via structlog
+- Runnable as `python -m src.db.seed --check-empty`
+
+**E2E test scenarios (`tests/e2e/test_smoke.py`):**
+- `TestBalanceCheck` — balance query + metrics verification
+- `TestPinResetConfirmation` — two-step confirmation flow
+- `TestEscalation` — frustrated user escalation
+- `TestHealthAndMetrics` — /health and /metrics smoke checks
+
+**Makefile targets:**
+- `make dev-up` / `make dev-down` — compose lifecycle
+- `make seed` — exec seed inside running container
+- `make test` / `make test-e2e` — unit vs e2e test suites
+- `make lint` / `make typecheck` / `make verify` — CI checks
+
+### Integration Points
+- Entrypoint reads `COCKROACHDB_URL`, `REDIS_URL` from environment (set in docker-compose.yml)
+- App healthcheck gates on `_ready` flag (set after lifespan startup)
+- E2E tests hit `http://localhost:8000` — require compose stack running
+- `make test-e2e` manages full lifecycle (up → test → down) for CI
+- Alembic env.py reads `COCKROACHDB_URL` and converts to async engine
+
+### Known Limitations
+- E2E tests not yet validated against live stack (Docker Hub unreachable in current environment)
+- Alembic has no migrations yet — `upgrade head` is a no-op
+- Seed module is a stub — no ORM models to seed
+- Confirmation flow (Scenario B) is stateless — mock agents don't track session state across calls
+- `make test-e2e` uses `sleep 5` as readiness buffer — could be replaced with polling

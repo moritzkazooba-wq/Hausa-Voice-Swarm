@@ -4,7 +4,15 @@ services:
     ports:
       - "8000:8000"
       - "8765:8765"
-    env_file: .env
+    environment:
+      - MOCK_LLM=true
+      - USE_REAL_ASR=false
+      - USE_REAL_TTS=false
+      - COCKROACHDB_URL=postgresql+asyncpg://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - LOG_LEVEL=INFO
+      - TELEPHONY_PROVIDER=stub
     depends_on:
       redis:
         condition: service_healthy
@@ -12,6 +20,12 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
 
   redis:
     image: redis:7-alpine
