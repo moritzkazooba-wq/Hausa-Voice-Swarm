@@ -516,3 +516,35 @@ Tracks what has been built, key file paths, and interface contracts.
 - Cost model assumes steady-state scale (10M/month) — does not model ramp-up period costs
 - Hybrid scenario GPU node cost is estimated — actual Whisper-Hausa inference throughput needs benchmarking
 - ADRs are point-in-time decisions — no formal review/supersede process defined
+
+---
+
+## Phase 13: README and Final Polish
+
+### Key Files Created/Modified
+- `README.md` — full project README with problem statement, Mermaid architecture diagram, stats, tech decisions, quick start, demo curls, project structure, tech stack table, load test commands, cost model link, portfolio integration (Project A → B → C), telephony notes, references, MIT license
+- `Makefile` — added `dev-up`, `dev-down`, `seed` targets for quick-start workflow
+- `docs/IMPLEMENTATION-LOG.md` — this entry
+
+### Public Interfaces
+- No new code interfaces — documentation and build targets only
+- `make dev-up` — starts docker-compose stack in detached mode
+- `make dev-down` — stops docker-compose stack
+- `make seed` — no-op (mock resolvers provide seed data)
+
+### Integration Points
+- README references all source modules, docs, and k8s manifests
+- Quick start uses `make dev-up` → `make test` → `make test-e2e` workflow
+- Portfolio section documents: Project A provides `WHISPER_MODEL_PATH` for ASR, Project C consumes `hsv.*` Kafka topics
+- Demo curl examples target `/test/simulate-call`, `/graphql`, `/health`, `/metrics` from `src/api/app.py`
+
+### Verification Results
+- `uv run ruff check src/ tests/` — zero issues
+- `uv run mypy src/` — zero issues (49 source files, strict mode)
+- `uv run pytest tests/ -v --ignore=tests/e2e` — 128 passed
+- e2e tests require Docker daemon (skipped in this environment)
+
+### Known Limitations
+- `make seed` is a no-op — real DB seeding requires Alembic migrations (not yet implemented)
+- e2e tests not verified in this pass (Docker daemon unavailable)
+- README demo curls assume default mock mode (`MOCK_LLM=true`)

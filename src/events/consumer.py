@@ -1,7 +1,6 @@
 """Async Kafka event consumers using aiokafka."""
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 import structlog
 from aiokafka import AIOKafkaConsumer
@@ -60,7 +59,7 @@ class BaseKafkaConsumer(ABC):
             await self.handle_message(msg.topic, msg.value, msg.key)
 
     @abstractmethod
-    async def handle_message(self, topic: str, value: Any, key: Any) -> None:
+    async def handle_message(self, topic: str, value: str, key: bytes | None) -> None:
         """Process a single consumed message. Subclasses must implement."""
         ...
 
@@ -78,7 +77,7 @@ class AnalyticsConsumer(BaseKafkaConsumer):
             settings=settings,
         )
 
-    async def handle_message(self, topic: str, value: Any, key: Any) -> None:
+    async def handle_message(self, topic: str, value: str, key: bytes | None) -> None:
         """Forward events to analytics pipeline (placeholder)."""
         await logger.ainfo(
             "analytics_event_received",

@@ -16,7 +16,7 @@ class CustomerProfile(BaseModel):
     id: UUID
     phone_number: str = Field(pattern=r"^\+234\d{10}$")
     name: str
-    balance: Decimal = Field(decimal_places=2)
+    balance: Decimal = Field(max_digits=12, decimal_places=2)
     currency: str = "NGN"
     plan: str
     status: str

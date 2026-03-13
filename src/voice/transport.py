@@ -12,6 +12,7 @@ import structlog
 from pipecat.frames.frames import (
     EndFrame,
     Frame,
+    StartFrame,
     TextFrame,
     TranscriptionFrame,
 )
@@ -27,14 +28,21 @@ class StubInputTransport(FrameProcessor):
 
     Frame injection is handled externally via PipelineTask.queue_frame().
     This processor simply passes all frames downstream unchanged.
+    Sets a ``pipeline_ready`` event when StartFrame is received.
     """
+
+    def __init__(self, pipeline_ready: asyncio.Event | None = None) -> None:
+        super().__init__()
+        self._pipeline_ready = pipeline_ready
 
     async def process_frame(
         self,
         frame: Frame,
         direction: FrameDirection,
     ) -> None:
-        """Pass all frames through unchanged."""
+        """Pass all frames through; signal readiness on StartFrame."""
+        if isinstance(frame, StartFrame) and self._pipeline_ready is not None:
+            self._pipeline_ready.set()
         await self.push_frame(frame, direction)
 
 
@@ -85,7 +93,8 @@ class StubTransport:
 
     def __init__(self, input_text: str) -> None:
         self._input_text = input_text
-        self._input_proc = StubInputTransport()
+        self._pipeline_ready = asyncio.Event()
+        self._input_proc = StubInputTransport(pipeline_ready=self._pipeline_ready)
         self._output_proc = StubOutputTransport()
 
     def input(self) -> FrameProcessor:
@@ -116,8 +125,8 @@ class StubTransport:
 
         assert isinstance(task, PipelineTask)
 
-        # Wait for pipeline to fully start (StartFrame propagation)
-        await asyncio.sleep(0.2)
+        # Wait for pipeline to signal readiness via StartFrame
+        await asyncio.wait_for(self._pipeline_ready.wait(), timeout=5.0)
 
         await task.queue_frame(
             TranscriptionFrame(

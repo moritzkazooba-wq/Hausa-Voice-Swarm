@@ -1,6 +1,6 @@
 """Helper functions for emitting session lifecycle and agent events."""
 
-from typing import Any, Literal
+from typing import Literal
 
 import structlog
 
@@ -12,6 +12,7 @@ from src.events.schemas import (
     SessionStartedEvent,
     ToolExecutedEvent,
 )
+from src.models.session import MetadataDict
 
 logger = structlog.get_logger()
 
@@ -47,7 +48,7 @@ async def emit_tool_executed(
     success: bool,
     duration_ms: float,
     result_summary: str,
-    metadata: dict[str, Any] | None = None,
+    metadata: MetadataDict | None = None,
 ) -> None:
     """Emit a ToolExecutedEvent after a domain agent action."""
     event = ToolExecutedEvent(

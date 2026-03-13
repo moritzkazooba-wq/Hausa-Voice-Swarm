@@ -25,6 +25,8 @@ class Transaction(BaseModel):
 class ActionResult(BaseModel):
     """Result of an agent action (e.g. transfer, bill payment)."""
 
+    model_config = ConfigDict(strict=True)
+
     success: bool
     message: str
     reference_id: str | None = None

@@ -6,7 +6,7 @@ Constructs the voice pipeline:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Protocol, runtime_checkable
 
 import structlog
 from pipecat.pipeline.pipeline import Pipeline
@@ -17,15 +17,22 @@ from src.metrics.definitions import active_voice_sessions
 from src.voice.agent_bridge import AgentBridgeProcessor
 from src.voice.asr import StubASRProcessor
 from src.voice.fillers import FillerProcessor
-from src.voice.transport import StubTransport
 from src.voice.tts import StubTTSProcessor
 from src.voice.vad_config import create_vad_processor
 
 logger = structlog.get_logger()
 
 
+@runtime_checkable
+class TransportProtocol(Protocol):
+    """Protocol for voice transports (stub, Daily, Telnyx)."""
+
+    def input(self) -> FrameProcessor: ...
+    def output(self) -> FrameProcessor: ...
+
+
 async def create_voice_pipeline(
-    transport: StubTransport | Any,
+    transport: TransportProtocol,
     session_id: str,
 ) -> tuple[Pipeline, PipelineTask, AgentBridgeProcessor]:
     """Build the Pipecat voice pipeline for a session.

@@ -1,9 +1,11 @@
 """Session and conversation models."""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+MetadataDict = dict[str, str | int | float | bool]
 
 
 class AgentMessage(BaseModel):
@@ -15,7 +17,7 @@ class AgentMessage(BaseModel):
     content: str
     timestamp: datetime
     agent_name: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: MetadataDict = Field(default_factory=dict)
 
 
 class SessionState(BaseModel):
