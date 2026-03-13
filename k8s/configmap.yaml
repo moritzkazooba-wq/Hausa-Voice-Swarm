@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hsv-config
+  namespace: hausa-voice-swarm
+  labels:
+    app.kubernetes.io/part-of: hausa-voice-swarm
+data:
+  MOCK_LLM: "true"
+  LOG_LEVEL: "info"
+  REDIS_URL: "redis://redis.hausa-voice-swarm.svc:6379/0"
+  KAFKA_BOOTSTRAP_SERVERS: "redpanda.hausa-voice-swarm.svc:9092"
+  COCKROACHDB_URL: "postgresql://root@cockroachdb.hausa-voice-swarm.svc:26257/hsv?sslmode=verify-full"
+  PROMETHEUS_PUSHGATEWAY_URL: "http://prometheus.hausa-voice-swarm.svc:9090"
+  APP_PORT: "8000"
+  WS_PORT: "8765"
