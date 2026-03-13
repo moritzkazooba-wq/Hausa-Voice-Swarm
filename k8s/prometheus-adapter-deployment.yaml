@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-adapter
+  namespace: hausa-voice-swarm
+  labels:
+    app: prometheus-adapter
+    app.kubernetes.io/part-of: hausa-voice-swarm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus-adapter
+  template:
+    metadata:
+      labels:
+        app: prometheus-adapter
+        app.kubernetes.io/part-of: hausa-voice-swarm
+    spec:
+      containers:
+        - name: prometheus-adapter
+          image: registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.11.2
+          args:
+            - --prometheus-url=http://prometheus.hausa-voice-swarm.svc:9090
+            - --config=/etc/adapter/config.yaml
+            - --metrics-relist-interval=30s
+            - --secure-port=6443
+          ports:
+            - name: https
+              containerPort: 6443
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/adapter
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-adapter-config

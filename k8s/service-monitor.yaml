@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hsv-services
+  namespace: hausa-voice-swarm
+  labels:
+    app.kubernetes.io/part-of: hausa-voice-swarm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: hausa-voice-swarm
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

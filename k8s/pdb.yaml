@@ -1,0 +1,27 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: voice-pipeline
+  namespace: hausa-voice-swarm
+  labels:
+    app: voice-pipeline
+    app.kubernetes.io/part-of: hausa-voice-swarm
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: voice-pipeline
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agent-api
+  namespace: hausa-voice-swarm
+  labels:
+    app: agent-api
+    app.kubernetes.io/part-of: hausa-voice-swarm
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agent-api

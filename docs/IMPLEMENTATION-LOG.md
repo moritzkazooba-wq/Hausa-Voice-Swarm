@@ -385,3 +385,60 @@ Tracks what has been built, key file paths, and interface contracts.
 - `mock_graphql_client` uses mock resolvers — will need update when real DB resolvers are wired
 - Layer 3 agent fixtures return mock-only agents — update when real LLM/DB integration lands
 - `voice_pipeline` fixture not yet implemented (requires async pipeline lifecycle management)
+
+---
+
+## Phase 9: Kubernetes Manifests
+
+### Key Files Created/Modified
+- `k8s/namespace.yaml` — `hausa-voice-swarm` namespace
+- `k8s/configmap.yaml` — `hsv-config` ConfigMap with env vars
+- `k8s/secrets.yaml` — `hsv-secrets` template (placeholder values)
+- `k8s/voice-pipeline-deployment.yaml` — 2 replicas, 2CPU/4Gi, GPU toleration, terminationGracePeriod 300s
+- `k8s/voice-pipeline-service.yaml` — LoadBalancer on ports 8000 + 8765
+- `k8s/agent-api-deployment.yaml` — 2 replicas, 1CPU/2Gi
+- `k8s/agent-api-service.yaml` — ClusterIP on port 8000
+- `k8s/hpa.yaml` — HPA v2 scaling on `hsv_active_voice_sessions` (AverageValue 5, min 2 / max 50)
+- `k8s/prometheus-adapter-configmap.yaml` — adapter rules mapping Prometheus gauge to custom metrics API
+- `k8s/prometheus-adapter-deployment.yaml` — prometheus-adapter v0.11.2
+- `k8s/prometheus-adapter-service.yaml` — ClusterIP 443→6443
+- `k8s/prometheus-adapter-apiservice.yaml` — registers `v1beta1.custom.metrics.k8s.io`
+- `k8s/pdb.yaml` — PodDisruptionBudget `minAvailable: 1` for both deployments
+- `k8s/service-monitor.yaml` — Prometheus Operator ServiceMonitor for `/metrics`
+- `k8s/network-policy.yaml` — voice↔api, api→db/redis/kafka NetworkPolicies
+- `k8s/CLAUDE.md` — updated with manifest inventory and apply order
+
+### Public Interfaces
+
+**Deployments:**
+- `voice-pipeline` — 2 min replicas, ports 8000 (http) + 8765 (websocket), GPU toleration, 300s graceful shutdown
+- `agent-api` — 2 min replicas, port 8000 (http), 30s graceful shutdown
+
+**Services:**
+- `voice-pipeline` — LoadBalancer exposing 8000 + 8765
+- `agent-api` — ClusterIP exposing 8000
+
+**HPA:**
+- Custom metric: `hsv_active_voice_sessions` (Pods type, AverageValue 5)
+- Scale-up: 30s stabilization, +5 pods per 30s
+- Scale-down: 300s stabilization, -10% per 60s
+- Range: 2–50 replicas
+
+**prometheus-adapter:**
+- Maps `hsv_active_voice_sessions` Prometheus gauge → K8s custom metrics API
+- Connects to `http://prometheus.hausa-voice-swarm.svc:9090`
+- Registers `v1beta1.custom.metrics.k8s.io` APIService
+
+### Integration Points
+- HPA reads `hsv_active_voice_sessions` via prometheus-adapter → Prometheus → app `/metrics` endpoint
+- Metric defined in `src/metrics/definitions.py` as `hsv_active_voice_sessions` Gauge
+- ConfigMap references in-cluster service URLs for Redis, Kafka, CockroachDB, Prometheus
+- ServiceMonitor auto-discovers pods with `app.kubernetes.io/part-of: hausa-voice-swarm` label
+- Both deployments use `envFrom` to load ConfigMap + Secret
+
+### Known Limitations
+- `secrets.yaml` contains placeholder values — must be replaced or managed via External Secrets Operator
+- Prometheus server deployment not included (assumed pre-existing or managed by Prometheus Operator)
+- No Ingress resource — voice-pipeline uses LoadBalancer directly
+- No TLS termination configured on services
+- Container images (`hsv-voice-pipeline`, `hsv-agent-api`) reference local tags — update with registry paths for production
