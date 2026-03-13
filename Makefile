@@ -1,4 +1,4 @@
-.PHONY: lint typecheck test test-e2e \
+.PHONY: lint typecheck test test-e2e dev-up dev-down seed \
        load-smoke load-local load-ramp load-sustained load-burst load-chaos load-report
 
 # ── Code quality ────────────────────────────────────────────────────
@@ -13,6 +13,16 @@ test:
 
 test-e2e:
 	uv run pytest tests/e2e/ -v
+
+# ── Local dev ─────────────────────────────────────────────────────
+dev-up:
+	docker compose up -d
+
+dev-down:
+	docker compose down
+
+seed:
+	@echo "Infrastructure running — mock data seeded via mock_resolvers (no DB seed needed)"
 
 # ── Load tests (local) ─────────────────────────────────────────────
 BASE_URL ?= http://localhost:8000
