@@ -51,10 +51,23 @@ class AgentBridgeProcessor(FrameProcessor):
         if isinstance(frame, TranscriptionFrame):
             start = time.monotonic()
 
-            result, classification = await route_to_agent(
-                self._session_id,
-                frame.text,
-            )
+            try:
+                result, classification = await route_to_agent(
+                    self._session_id,
+                    frame.text,
+                )
+            except Exception:
+                await logger.aerror(
+                    "agent_bridge_error",
+                    session_id=self._session_id,
+                    utterance=frame.text,
+                    exc_info=True,
+                )
+                await self.push_frame(
+                    TextFrame(text="I'm sorry, please try again."),
+                )
+                return
+
             self._last_classification = classification
 
             elapsed_ms = (time.monotonic() - start) * 1000.0

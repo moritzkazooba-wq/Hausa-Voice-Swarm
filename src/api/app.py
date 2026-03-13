@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 from uuid import uuid4
 
 import structlog
@@ -81,7 +80,7 @@ def create_app() -> FastAPI:
     )
 
     # GraphQL
-    graphql_router = GraphQLRouter[Any, None](
+    graphql_router = GraphQLRouter[GraphQLContext, None](
         schema,
         context_getter=_get_context,
     )

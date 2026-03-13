@@ -115,6 +115,20 @@ class TestKafkaEventProducer:
         # Should not raise — just logs warning
         await producer.publish(event)
 
+    async def test_publish_unknown_event_type_logs_error(
+        self, mock_producer: KafkaEventProducer,
+    ) -> None:
+        """Publishing an event with an unknown event_type should log error and not send."""
+        from src.events.schemas import BaseEvent
+
+        class UnknownEvent(BaseEvent):
+            event_type: str = "unknown_type"
+
+        event = UnknownEvent(session_id="sess-unknown")
+        await mock_producer.publish(event)
+
+        mock_producer._producer.send_and_wait.assert_not_called()  # type: ignore[union-attr]
+
     async def test_start_and_stop(self) -> None:
         producer = KafkaEventProducer()
         with patch("src.events.producer.AIOKafkaProducer") as mock_cls:

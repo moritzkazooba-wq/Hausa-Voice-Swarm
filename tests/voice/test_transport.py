@@ -94,3 +94,14 @@ async def test_create_transport_telnyx_raises() -> None:
     settings = TelephonySettings(telephony_provider="telnyx")
     with pytest.raises(NotImplementedError, match="TelnyxTransport"):
         create_transport(settings)
+
+
+@pytest.mark.asyncio
+async def test_create_transport_unknown_provider_raises() -> None:
+    """Unknown telephony provider should raise ValueError."""
+    from unittest.mock import MagicMock
+
+    settings = MagicMock()
+    settings.telephony_provider = "unknown_provider"
+    with pytest.raises(ValueError, match="Unknown telephony provider"):
+        create_transport(settings)

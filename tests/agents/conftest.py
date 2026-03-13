@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import pytest
 from src.agents.domains.balance import BalanceAgent
 from src.agents.domains.bills import BillsAgent
@@ -36,12 +39,12 @@ def general_agent() -> GeneralAgent:
 
 
 @pytest.fixture
-def intent_classifier():
+def intent_classifier() -> Callable[..., Any]:
     """Pre-loaded intent classifier function (MOCK_LLM=true by default)."""
     return classify_intent
 
 
 @pytest.fixture
-def supervisor():
+def supervisor() -> Callable[..., Any]:
     """Supervisor route function configured with MOCK_LLM=true."""
     return route_to_agent

@@ -54,12 +54,12 @@ class KafkaEventProducer:
         The topic is determined by the event's ``event_type`` field.
         The event is serialized to JSON.
         """
+        event_type: str = getattr(event, "event_type", "unknown")
+
         if self._producer is None:
-            evt_type = getattr(event, "event_type", "unknown")
-            await logger.awarn("kafka_producer_not_started", event_type=evt_type)
+            await logger.awarn("kafka_producer_not_started", event_type=event_type)
             return
 
-        event_type: str = getattr(event, "event_type", "unknown")
         topic = _EVENT_TOPIC_MAP.get(event_type)
         if topic is None:
             await logger.aerror("unknown_event_type", event_type=event_type)

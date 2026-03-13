@@ -85,3 +85,29 @@ async def test_bridge_calls_route_to_agent_with_session_id(
         )
 
     mock_route.assert_awaited_once_with("test-session-001", "hello")
+
+
+@pytest.mark.asyncio
+async def test_bridge_handles_route_to_agent_error(
+    bridge: AgentBridgeProcessor,
+) -> None:
+    """When route_to_agent raises, bridge should push a fallback TextFrame."""
+    pushed: list[Frame] = []
+
+    async def capture(frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM) -> None:
+        pushed.append(frame)
+
+    bridge.push_frame = capture  # type: ignore[assignment]
+
+    with patch(
+        "src.voice.agent_bridge.route_to_agent",
+        side_effect=RuntimeError("supervisor crashed"),
+    ):
+        await bridge.process_frame(
+            TranscriptionFrame(text="hello", user_id="u1", timestamp="0"),
+            FrameDirection.DOWNSTREAM,
+        )
+
+    assert len(pushed) == 1
+    assert isinstance(pushed[0], TextFrame)
+    assert "sorry" in pushed[0].text.lower()

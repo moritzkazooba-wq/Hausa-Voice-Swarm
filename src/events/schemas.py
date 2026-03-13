@@ -1,9 +1,11 @@
 """Kafka event schemas consumed by Project C ops dashboard."""
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from src.models.session import MetadataDict
 
 
 def _utcnow() -> datetime:
@@ -39,7 +41,7 @@ class ToolExecutedEvent(BaseEvent):
     success: bool
     duration_ms: float
     result_summary: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: MetadataDict = Field(default_factory=dict)
 
 
 class SessionStartedEvent(BaseEvent):

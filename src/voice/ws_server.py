@@ -6,15 +6,13 @@ Started/stopped via FastAPI lifespan context manager.
 
 from __future__ import annotations
 
-import asyncio
-
 import structlog
 import websockets.asyncio.server
 
 logger = structlog.get_logger()
 
 
-async def start_ws_server(port: int = 8765) -> asyncio.Server:
+async def start_ws_server(port: int = 8765) -> websockets.asyncio.server.Server:
     """Start the WebSocket server for audio streams.
 
     Currently a stub that logs connections without processing audio.
@@ -39,4 +37,4 @@ async def start_ws_server(port: int = 8765) -> asyncio.Server:
         port,
     )
     await logger.ainfo("ws_server_started", port=port)
-    return server  # type: ignore[return-value]
+    return server
